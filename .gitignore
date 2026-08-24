@@ -1,2 +1,7 @@
-*
-!.gitignore
+.settings 
+Debug
+Drivers
+.cproject
+.mxproject
+.project
+perfect_pop Debug.launch
