@@ -44,7 +44,10 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Memories definition */
 MEMORY
 {
-  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 512K
+  /* DTCM-RAM: tightly-coupled to the CPU only, NOT reachable by DMA controllers */
+  RAM      (xrw)  : ORIGIN = 0x20000000,   LENGTH = 128K
+  /* SRAM1+SRAM2 on the AXI/AHB bus matrix: reachable by DMA controllers */
+  RAM_D2   (xrw)  : ORIGIN = 0x20020000,   LENGTH = 384K
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 2048K
 }
 
@@ -174,6 +177,14 @@ SECTIONS
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >RAM
+
+  /* Buffers accessed by DMA must live outside DTCM; place them in RAM_D2 */
+  .dma_buffer (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.dma_buffer)
+    . = ALIGN(4);
+  } >RAM_D2
 
   /* Remove information from the compiler libraries */
   /DISCARD/ :

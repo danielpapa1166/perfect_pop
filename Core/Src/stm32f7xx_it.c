@@ -55,8 +55,9 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern DMA_HandleTypeDef hdma_dfsdm1_flt0;
+extern DFSDM_Filter_HandleTypeDef hdfsdm1_filter0;
 extern LTDC_HandleTypeDef hltdc;
-extern PCD_HandleTypeDef hpcd_USB_OTG_HS;
 extern TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN EV */
@@ -142,19 +143,6 @@ void UsageFault_Handler(void)
 }
 
 /**
-  * @brief This function handles System service call via SWI instruction.
-  */
-void SVC_Handler(void)
-{
-  /* USER CODE BEGIN SVCall_IRQn 0 */
-
-  /* USER CODE END SVCall_IRQn 0 */
-  /* USER CODE BEGIN SVCall_IRQn 1 */
-
-  /* USER CODE END SVCall_IRQn 1 */
-}
-
-/**
   * @brief This function handles Debug monitor.
   */
 void DebugMon_Handler(void)
@@ -165,33 +153,6 @@ void DebugMon_Handler(void)
   /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 
   /* USER CODE END DebugMonitor_IRQn 1 */
-}
-
-/**
-  * @brief This function handles Pendable request for system service.
-  */
-void PendSV_Handler(void)
-{
-  /* USER CODE BEGIN PendSV_IRQn 0 */
-
-  /* USER CODE END PendSV_IRQn 0 */
-  /* USER CODE BEGIN PendSV_IRQn 1 */
-
-  /* USER CODE END PendSV_IRQn 1 */
-}
-
-/**
-  * @brief This function handles System tick timer.
-  */
-void SysTick_Handler(void)
-{
-  /* USER CODE BEGIN SysTick_IRQn 0 */
-
-  /* USER CODE END SysTick_IRQn 0 */
-
-  /* USER CODE BEGIN SysTick_IRQn 1 */
-
-  /* USER CODE END SysTick_IRQn 1 */
 }
 
 /******************************************************************************/
@@ -216,17 +177,17 @@ void TIM6_DAC_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles USB On The Go HS global interrupt.
+  * @brief This function handles DMA2 stream0 global interrupt.
   */
-void OTG_HS_IRQHandler(void)
+void DMA2_Stream0_IRQHandler(void)
 {
-  /* USER CODE BEGIN OTG_HS_IRQn 0 */
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 0 */
 
-  /* USER CODE END OTG_HS_IRQn 0 */
-  HAL_PCD_IRQHandler(&hpcd_USB_OTG_HS);
-  /* USER CODE BEGIN OTG_HS_IRQn 1 */
+  /* USER CODE END DMA2_Stream0_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_dfsdm1_flt0);
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 1 */
 
-  /* USER CODE END OTG_HS_IRQn 1 */
+  /* USER CODE END DMA2_Stream0_IRQn 1 */
 }
 
 /**
@@ -241,6 +202,20 @@ void LTDC_IRQHandler(void)
   /* USER CODE BEGIN LTDC_IRQn 1 */
 
   /* USER CODE END LTDC_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DFSDM1 filter0 global interrupt.
+  */
+void DFSDM1_FLT0_IRQHandler(void)
+{
+  /* USER CODE BEGIN DFSDM1_FLT0_IRQn 0 */
+
+  /* USER CODE END DFSDM1_FLT0_IRQn 0 */
+  HAL_DFSDM_IRQHandler(&hdfsdm1_filter0);
+  /* USER CODE BEGIN DFSDM1_FLT0_IRQn 1 */
+
+  /* USER CODE END DFSDM1_FLT0_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */
