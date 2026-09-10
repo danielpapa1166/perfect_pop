@@ -15,11 +15,12 @@
 #define UART_BUFFER_SIZE 		1
 #define UART_TX_MAX_SIZE		1024  // bytes
 
-// Frame: [4 sync bytes][1 count byte][count * int32_t payload][1 checksum byte].
+// Frame: [4 sync bytes][1 count byte][integer payload][1 checksum byte].
 // The checksum lets the receiver reject a false marker match inside payload
 // data and keep searching instead of misparsing it as a frame start.
-static const uint8_t UART_SYNC_MARKER[4] = {0xAA, 0x55, 0xA5, 0x5A};
-#define UART_HEADER_SIZE 		(sizeof(UART_SYNC_MARKER) + 1)
+static const uint8_t UART_SYNC_MARKER_INT32[4] = {0xAA, 0x55, 0xA5, 0x5A};
+static const uint8_t UART_SYNC_MARKER_INT16[4] = {0xAA, 0x55, 0xA5, 0x5B};
+#define UART_HEADER_SIZE 		(sizeof(UART_SYNC_MARKER_INT32) + 1)
 #define UART_FOOTER_SIZE 		1
 
 typedef enum {
@@ -78,7 +79,11 @@ int exec_uart_task(UART_HandleTypeDef * const uart_hdl) {
 }
 
 
-int send_uart_integer(const int32_t * const txBuffer, size_t bufferSize) {
+static int send_uart_integers(
+		const void * const txBuffer,
+		size_t bufferSize,
+		const uint8_t * const syncMarker,
+		size_t integerSize) {
 
 	if(dev_stat != UART_FREE) {
 		return -1;
@@ -89,20 +94,25 @@ int send_uart_integer(const int32_t * const txBuffer, size_t bufferSize) {
 
 	int retval = 0;
 
-	memset(TxData, 0, UART_TX_MAX_SIZE);
-	size_t payload_size = bufferSize * sizeof(int32_t);
-	if(payload_size >= UART_TX_MAX_SIZE - UART_HEADER_SIZE - UART_FOOTER_SIZE) {
-		payload_size = UART_TX_MAX_SIZE - UART_HEADER_SIZE - UART_FOOTER_SIZE;
-
+	size_t maxBufferSize =
+			(UART_TX_MAX_SIZE - UART_HEADER_SIZE - UART_FOOTER_SIZE) / integerSize;
+	if(maxBufferSize > UINT8_MAX) {
+		maxBufferSize = UINT8_MAX;
+	}
+	if(bufferSize > maxBufferSize) {
+		bufferSize = maxBufferSize;
 		retval = 1;
 	}
 
-	memcpy(TxData, UART_SYNC_MARKER, sizeof(UART_SYNC_MARKER));
-	TxData[sizeof(UART_SYNC_MARKER)] = (uint8_t) (payload_size / sizeof(int32_t));
+	memset(TxData, 0, UART_TX_MAX_SIZE);
+	const size_t payload_size = bufferSize * integerSize;
+
+	memcpy(TxData, syncMarker, sizeof(UART_SYNC_MARKER_INT32));
+	TxData[sizeof(UART_SYNC_MARKER_INT32)] = (uint8_t) bufferSize;
 	memcpy(TxData + UART_HEADER_SIZE, txBuffer, payload_size);
 
 	uint8_t checksum = 0;
-	for (size_t i = sizeof(UART_SYNC_MARKER); i < UART_HEADER_SIZE + payload_size; i++) {
+	for (size_t i = sizeof(UART_SYNC_MARKER_INT32); i < UART_HEADER_SIZE + payload_size; i++) {
 		checksum += TxData[i];
 	}
 	TxData[UART_HEADER_SIZE + payload_size] = checksum;
@@ -112,5 +122,15 @@ int send_uart_integer(const int32_t * const txBuffer, size_t bufferSize) {
 
 
 	return retval;
+}
+
+
+int send_uart_int32(const int32_t * const txBuffer, size_t bufferSize) {
+	return send_uart_integers(txBuffer, bufferSize, UART_SYNC_MARKER_INT32, sizeof(*txBuffer));
+}
+
+
+int send_uart_int16(const int16_t * const txBuffer, size_t bufferSize) {
+	return send_uart_integers(txBuffer, bufferSize, UART_SYNC_MARKER_INT16, sizeof(*txBuffer));
 }
 

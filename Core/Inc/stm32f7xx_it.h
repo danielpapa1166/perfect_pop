@@ -55,9 +55,13 @@ void DebugMon_Handler(void);
 void USART1_IRQHandler(void);
 void TIM6_DAC_IRQHandler(void);
 void DMA2_Stream0_IRQHandler(void);
+void DMA2_Stream1_IRQHandler(void);
 void DMA2_Stream2_IRQHandler(void);
 void DMA2_Stream7_IRQHandler(void);
+void SAI1_IRQHandler(void);
 void LTDC_IRQHandler(void);
+void I2C4_EV_IRQHandler(void);
+void I2C4_ER_IRQHandler(void);
 void DFSDM1_FLT0_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 

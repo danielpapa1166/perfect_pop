@@ -9,6 +9,8 @@
 #include <string.h>
 
 #include "cmsis_os.h"
+#include "pp_dsp.h"
+#include "pp_sai.h"
 
 #include "main.h"
 #include "pp_pdm.h"
@@ -26,9 +28,9 @@ static DFSDM_Filter_HandleTypeDef * m_filter_handle = NULL;
 
 // DTCM (default RAM) is not reachable by DMA2
 int32_t micRecBuf[AUDIO_LEN] __attribute__((section(".dma_buffer")));
-int32_t micAudioBuf[AUDIO_LEN] __attribute__((section(".dma_buffer")));
+int16_t micAudioBuf[AUDIO_LEN] __attribute__((section(".dma_buffer")));
 
-int16_t pcm_buff[AUDIO_LEN];
+int16_t filtered_buf[AUDIO_LEN] __attribute__((section(".dma_buffer")));
 
 volatile uint8_t audioFilterHalfCplt = 0;
 volatile uint8_t audioFilterCplt = 0;
@@ -36,6 +38,10 @@ volatile uint32_t dma2Stream0IrqCount = 0;
 volatile uint32_t audioFilterHalfCpltCount = 0;
 volatile uint32_t audioFilterCpltCount = 0;
 volatile uint32_t audioFilterErrorCode = 0;
+volatile int saiDmaStatus = 0;
+volatile uint32_t saiDmaErrorCount = 0;
+volatile uint32_t saiDmaUnderrunCount = 0;
+volatile uint32_t saiDmaErrorCode = 0;
 
 /*PDM_Filter_Handler_t PDM1_filter_handler;
 PDM_Filter_Config_t PDM1_filter_config;*/
@@ -101,8 +107,9 @@ int exec_pdm_task(DFSDM_Filter_HandleTypeDef * const dfsdm_filter_hdl) {
 
 	m_filter_handle = dfsdm_filter_hdl;
 
-	memset(micRecBuf, 0, sizeof(micRecBuf));
-	memset(micAudioBuf, 0, sizeof(micAudioBuf));
+	memset(micRecBuf, 0, sizeof(micRecBuf[0]) * AUDIO_LEN);
+	memset(micAudioBuf, 0, sizeof(micAudioBuf[0]) * AUDIO_LEN);
+	memset(filtered_buf, 0, sizeof(filtered_buf[0]) * AUDIO_LEN);
 	const HAL_StatusTypeDef res = HAL_DFSDM_FilterRegularStart_DMA(
 			m_filter_handle, micRecBuf, AUDIO_LEN);
 
@@ -123,7 +130,7 @@ int exec_pdm_task(DFSDM_Filter_HandleTypeDef * const dfsdm_filter_hdl) {
 		if (audioFilterHalfCplt == 1) {
 		    // fill the audio buffer
 		    for (i = 0; i < H_AUDIO_LEN; i++) {
-	            micAudioBuf[i] = micRecBuf[i] >> 8;
+	            micAudioBuf[i] = (int16_t) (micRecBuf[i] >> 8);
 		    }
 		    // reset the flag
 		    audioFilterHalfCplt = 0;
@@ -132,24 +139,34 @@ int exec_pdm_task(DFSDM_Filter_HandleTypeDef * const dfsdm_filter_hdl) {
 		if (audioFilterCplt == 1) {
 		    // fill the audio buffer
 		    for (i = H_AUDIO_LEN; i < AUDIO_LEN; i++) {
-	            micAudioBuf[i] = micRecBuf[i] >> 8;
+	            micAudioBuf[i] = (int16_t) (micRecBuf[i] >> 8);
 	        }
 	        audioFilterCplt = 0;
 
 	        //PDM_Filter(&micAudioBuf[0], &pcm_buff[0], &PDM1_filter_handler);
 
 		    cnt ++;
-		    if(cnt % 500 == 0) {
+		    if(cnt % 240 == 0) {
 			    HAL_GPIO_TogglePin(
 					LD_USER1_GPIO_Port,
 					LD_USER1_Pin);
 		    }
 
-		    //send_uart_integer(test_buffer, sizeof(test_buffer) / sizeof(test_buffer[0]));
-		    const int res = send_uart_integer(micAudioBuf, AUDIO_LEN);
+
+		    dsp_test_filter(micAudioBuf, AUDIO_LEN, filtered_buf);
+
+		    //send_uart_int32(test_buffer, sizeof(test_buffer) / sizeof(test_buffer[0]));
+		    const int res = send_uart_int16(filtered_buf, AUDIO_LEN);
 		    if(res == -1) {
 		    	m_uart_send_failed ++;
 		    }
+
+		    saiDmaStatus = sai_submit_mono_block(filtered_buf, AUDIO_LEN);
+		    if (saiDmaStatus != 0) {
+				saiDmaErrorCount++;
+		    }
+		    saiDmaUnderrunCount = sai_get_tx_underrun_count();
+		    saiDmaErrorCode = sai_get_error_code();
 		}
 
 	    osDelay(1);

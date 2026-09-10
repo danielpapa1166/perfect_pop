@@ -8,6 +8,8 @@
 #ifndef SRC_PP_UART_H_
 #define SRC_PP_UART_H_
 
+#include <stddef.h>
+#include <stdint.h>
 
 #include "stm32f7xx.h"
 #include "stm32f7xx_hal_uart.h"
@@ -15,7 +17,8 @@
 
 
 int exec_uart_task(UART_HandleTypeDef * const uart_hdl);
-int send_uart_integer(const int32_t * const txBuffer, size_t bufferSize);
+int send_uart_int32(const int32_t * const txBuffer, size_t bufferSize);
+int send_uart_int16(const int16_t * const txBuffer, size_t bufferSize);
 
 
 #endif /* SRC_PP_UART_H_ */
