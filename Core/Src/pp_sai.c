@@ -9,7 +9,7 @@
 
 #include "pp_sai.h"
 
-#include "wm8894/wm8994.h"
+#include "wm8994.h"
 
 #define WM8994_I2C_ADDRESS          0x34U
 #define WM8994_I2C_READY_TRIALS     3U
