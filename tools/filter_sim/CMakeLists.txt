@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(filter_sim LANGUAGES C)
 
+find_package(Threads REQUIRED)
+
 add_executable(filter_sim
     main.c
     "${CMAKE_CURRENT_LIST_DIR}/../../Core/Src/pp_dsp.c"
@@ -13,7 +15,9 @@ target_include_directories(filter_sim PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../Core/Src"
 )
 
+target_link_libraries(filter_sim PRIVATE Threads::Threads)
+
 target_compile_definitions(filter_sim PRIVATE
     FILTER_SIM_INPUT_PATH=\"${CMAKE_CURRENT_LIST_DIR}/data/chirp_noise_48khz_s16le.pcm\"
-    FILTER_SIM_OUTPUT_PATH=\"${CMAKE_CURRENT_LIST_DIR}/data/chirp_noise_filtered_48khz_s16le.pcm\"
+    FILTER_SIM_OUTPUT_PATH=\"${CMAKE_CURRENT_LIST_DIR}/data/chirp_noise_xcorr_48khz_f32le.raw\"
 )
