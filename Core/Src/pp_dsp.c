@@ -9,6 +9,8 @@
 #include "pp_dsp.h"
 #include "pp_audio_buffer_config.h"
 
+#include <string.h>
+
 #define FILTER_SIZE 					8U
 #define FILTER_DECIMATION_FACTOR 		6
 #define DECIMATED_BUFFER_SIZE  			(AUDIO_LEN / FILTER_DECIMATION_FACTOR)
@@ -31,7 +33,7 @@ static const float m_matched_filter_sample[FILTER_SIZE] = {
 	0.000000f, -0.707107f, -1.000000f, -0.707107f,
 };
 
-static const float m_matched_filter_10[FILTER_SIZE*10]; 
+static float m_matched_filter_10[FILTER_SIZE*10];
 
 
 static void all_pass_filter(const int16_t * const buf_in, size_t buf_size, int16_t * const buf_out) {
@@ -158,7 +160,7 @@ void dsp_filter_init(void) {
 	for (size_t i = 0; i < 10; i++) {
 		memcpy(&m_matched_filter_10[i * FILTER_SIZE], 
 			m_matched_filter_sample, 
-			FILTER_SIZE);
+			sizeof(m_matched_filter_sample));
 	}
 
 }
