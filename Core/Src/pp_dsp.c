@@ -9,6 +9,8 @@
 #include "pp_dsp.h"
 #include "pp_audio_buffer_config.h"
 
+
+#include <stdint.h>
 #include <string.h>
 
 #define FILTER_SIZE 					8U
@@ -17,10 +19,22 @@
 #define X_CORR_FILTER_BUFFER_SIZE  		(DECIMATED_BUFFER_SIZE * 100)
 
 
+#define DSP_INPUT_QUEUE_SIZE    		10
+
+static int16_t m_input_queue[DSP_INPUT_QUEUE_SIZE][AUDIO_LEN];
+
+// todo: make this platform specific mutext or semaphore (CMSIS or linux build host):
+static uint8_t m_input_queue_mutex = 0;
+
+static uint8_t m_input_queue_head = 0;
+static uint8_t m_input_queue_tail = 0; 
+
+
 static int16_t m_filter_buffer[AUDIO_LEN];
 static int16_t m_decimated_buffer[DECIMATED_BUFFER_SIZE];
 
-static float x_corr_filter_buffer[X_CORR_FILTER_BUFFER_SIZE]; 
+static float m_xcorr_input_buffer[X_CORR_FILTER_BUFFER_SIZE];
+static float m_xcorr_output_buffer[X_CORR_FILTER_BUFFER_SIZE];
 
 static int m_filter_type = 3;
 
@@ -185,31 +199,81 @@ void dsp_test_filter(const int16_t * const buf_in, size_t buf_size, int16_t * co
 
 int push_audio_buffer(const int16_t * const buf_in, size_t buf_size) {
 
-	// shift the xcorr buffer 
-	for (size_t i = X_CORR_FILTER_BUFFER_SIZE - DECIMATED_BUFFER_SIZE - 1; i != (size_t)(-1); i--) {
-		x_corr_filter_buffer[i + DECIMATED_BUFFER_SIZE] = x_corr_filter_buffer[i];
+	if (buf_size != AUDIO_LEN) {
+		return -1;
 	}
 
+	// shift the xcorr buffer 
+	/*
+    */
 
+	while(m_input_queue_mutex) {
+		// wait for the input queue to be free
+	}
+	
+	// acquire the input queue mutex
+	m_input_queue_mutex = 1;
+
+	// store new samples: 
+	memcpy(m_input_queue[m_input_queue_head], buf_in, buf_size * sizeof(int16_t));
+	m_input_queue_head = (m_input_queue_head + 1) % DSP_INPUT_QUEUE_SIZE;
+	
+	// release the input queue mutex
+	m_input_queue_mutex = 0;
+
+	
+	
+
+	return 0;
+}
+
+int dsp_consume_audio_buffer(void) {
+	// acquire the input queue mutex
+	while(m_input_queue_mutex) {
+		// wait for the input queue to be free
+	}
+	m_input_queue_mutex = 1;
+
+	if(m_input_queue_head == m_input_queue_tail) {
+		// queue is empty
+		m_input_queue_mutex = 0;
+		return -1;
+	}
+
+	for (size_t i = X_CORR_FILTER_BUFFER_SIZE - DECIMATED_BUFFER_SIZE - 1; i != (size_t)(-1); i--) {
+		m_xcorr_input_buffer[i + DECIMATED_BUFFER_SIZE] = m_xcorr_input_buffer[i];
+	}
+
+	int16_t * const buf_in = m_input_queue[m_input_queue_tail];
+	size_t buf_size = AUDIO_LEN;
+
+	// consume the audio buffer
 	anti_aliasing_filter(buf_in, buf_size, m_filter_buffer);
 	
+	m_input_queue_tail = (m_input_queue_tail + 1) % DSP_INPUT_QUEUE_SIZE;
+
+	// release the input queue mutex
+	m_input_queue_mutex = 0;
+
+	// working in local buffers
+
 	decimation_filter(
 		m_filter_buffer, buf_size, 
-		m_decimated_buffer, FILTER_DECIMATION_FACTOR);
+		m_decimated_buffer, 
+		FILTER_DECIMATION_FACTOR);
 
 	for (size_t i = 0; i < DECIMATED_BUFFER_SIZE; i++) {
-		x_corr_filter_buffer[i] = m_decimated_buffer[i];
+		m_xcorr_input_buffer[i] = m_decimated_buffer[i];
 	}
 
 
 	x_corr_filter(
-		x_corr_filter_buffer, 
+		m_xcorr_input_buffer,
 		X_CORR_FILTER_BUFFER_SIZE, 
-		x_corr_filter_buffer);
+		m_xcorr_output_buffer);
 
-	
 
-	return 0;
+	return 0; 
 }
 
 
@@ -217,6 +281,6 @@ void get_xcorr_buffer_48kHz(float * const buf_out) {
 	size_t j; 
 	for (size_t i = 0; i < AUDIO_LEN; i++) {
 		j = X_CORR_FILTER_BUFFER_SIZE - (i / FILTER_DECIMATION_FACTOR) - 1;
-		buf_out[i] = x_corr_filter_buffer[j];
+		buf_out[i] = m_xcorr_output_buffer[j];
 	}
 }
