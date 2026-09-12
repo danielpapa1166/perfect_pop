@@ -8,6 +8,7 @@
 
 #include "pp_dsp.h"
 #include "pp_audio_buffer_config.h"
+#include "pp_chirp_signal.h"
 
 
 #include <stdint.h>
@@ -47,8 +48,8 @@ static const float m_matched_filter_sample[FILTER_SIZE] = {
 	0.000000f, -0.707107f, -1.000000f, -0.707107f,
 };
 
-static float m_matched_filter_10[FILTER_SIZE*10];
-
+//static float m_matched_filter_10[FILTER_SIZE*10];
+const int16_t * const m_x_corr_base_signal = pp_chirp_signal;
 
 static void all_pass_filter(const int16_t * const buf_in, size_t buf_size, int16_t * const buf_out) {
 	size_t i;
@@ -113,7 +114,7 @@ static void matched_filter(const int16_t * const buf_in, size_t buf_size, int16_
 				if (i >= j) {
 
 					float act_sample = (float)m_decimated_buffer[i - j] 
-						* (m_matched_filter_10[j] * 32767.0f);
+						* ((float) m_x_corr_base_signal[j]);
 
 					sum += act_sample;
 				}
@@ -139,7 +140,7 @@ static void x_corr_filter(const float * const buf_in, size_t buf_size, float * c
 			if (i >= j) {
 
 				float act_sample = (float)buf_in[i - j] 
-					* (m_matched_filter_10[j] * 32767.0f);
+					* ((float)m_x_corr_base_signal[j]);
 
 				sum += act_sample;
 			}
@@ -171,11 +172,11 @@ static void high_pass_filter(const int16_t * const buf_in, size_t buf_size, int1
 }
 
 void dsp_filter_init(void) {
-	for (size_t i = 0; i < 10; i++) {
+	/*for (size_t i = 0; i < 10; i++) {
 		memcpy(&m_matched_filter_10[i * FILTER_SIZE], 
 			m_matched_filter_sample, 
 			sizeof(m_matched_filter_sample));
-	}
+	}*/
 
 }
 
