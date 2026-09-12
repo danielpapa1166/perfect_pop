@@ -7,6 +7,7 @@
 
 
 #include <string.h>
+#include "pp_audio_buffer_config.h"
 
 #include "cmsis_os.h"
 #include "pp_dsp.h"
@@ -17,9 +18,6 @@
 #include "pp_uart.h"
 #include "stm32f7xx_hal_def.h"
 
-// ----------------------------------------------------------------------------
-#define AUDIO_LEN 		100
-#define H_AUDIO_LEN 	50
 
 
 // ----------------------------------------------------------------------------
@@ -31,6 +29,11 @@ int32_t micRecBuf[AUDIO_LEN] __attribute__((section(".dma_buffer")));
 int16_t micAudioBuf[AUDIO_LEN] __attribute__((section(".dma_buffer")));
 
 int16_t filtered_buf[AUDIO_LEN] __attribute__((section(".dma_buffer")));
+
+
+float xcorr_buffer_48kHz[AUDIO_LEN];
+float conv_val = 10; 
+int16_t xcorr_buffer_48kHz_int16[AUDIO_LEN] __attribute__((section(".dma_buffer")));
 
 volatile uint8_t audioFilterHalfCplt = 0;
 volatile uint8_t audioFilterCplt = 0;
@@ -105,6 +108,8 @@ int exec_pdm_task(DFSDM_Filter_HandleTypeDef * const dfsdm_filter_hdl) {
   ecode = PDM_Filter_setConfig(&PDM1_filter_handler, &PDM1_filter_config);
 	 * */
 
+	dsp_filter_init();
+
 	m_filter_handle = dfsdm_filter_hdl;
 
 	memset(micRecBuf, 0, sizeof(micRecBuf[0]) * AUDIO_LEN);
@@ -146,22 +151,26 @@ int exec_pdm_task(DFSDM_Filter_HandleTypeDef * const dfsdm_filter_hdl) {
 	        //PDM_Filter(&micAudioBuf[0], &pcm_buff[0], &PDM1_filter_handler);
 
 		    cnt ++;
-		    if(cnt % 240 == 0) {
+		    if(cnt % 200 == 0) {
 			    HAL_GPIO_TogglePin(
 					LD_USER1_GPIO_Port,
 					LD_USER1_Pin);
 		    }
 
 
-		    dsp_test_filter(micAudioBuf, AUDIO_LEN, filtered_buf);
+			/*push_audio_buffer(micAudioBuf, AUDIO_LEN);
+			get_xcorr_buffer_48kHz(xcorr_buffer_48kHz); 
+			for (size_t i = 0; i < AUDIO_LEN; i++) {
+				xcorr_buffer_48kHz_int16[i] = (int16_t)(xcorr_buffer_48kHz[i] * conv_val);
+			}*/
 
 		    //send_uart_int32(test_buffer, sizeof(test_buffer) / sizeof(test_buffer[0]));
-		    const int res = send_uart_int16(filtered_buf, AUDIO_LEN);
+		    const int res = send_uart_int16(micAudioBuf, AUDIO_LEN);
 		    if(res == -1) {
 		    	m_uart_send_failed ++;
 		    }
 
-		    saiDmaStatus = sai_submit_mono_block(filtered_buf, AUDIO_LEN);
+		    saiDmaStatus = sai_submit_mono_block(micAudioBuf, AUDIO_LEN);
 		    if (saiDmaStatus != 0) {
 				saiDmaErrorCount++;
 		    }
