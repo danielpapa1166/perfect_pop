@@ -6,17 +6,19 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+SIGNAL_TYPE = "square"  # Options: "chirp", "square"
+
 
 SAMPLE_RATE_HZ = 48_000
 XCORR_DECIMATION_FACTOR = 6
 XCORR_SAMPLE_RATE_HZ = SAMPLE_RATE_HZ // XCORR_DECIMATION_FACTOR
 DURATION_SECONDS = 10
 CHIRP_START_SECONDS = 5.0
-CHIRP_DURATION_SECONDS = 0.100
+CHIRP_DURATION_SECONDS = 0.008
 CHIRP_START_FREQUENCY_HZ = 100.0
 CHIRP_END_FREQUENCY_HZ = 800.0
 CHIRP_AMPLITUDE = 0.70
-NOISE_STANDARD_DEVIATION = 0.04
+NOISE_STANDARD_DEVIATION = 0.0
 RANDOM_SEED = 20260912
 
 DATA_DIRECTORY = Path(__file__).resolve().parent / "data"
@@ -41,6 +43,13 @@ def generate_chirp_signal():
     )
 
     return CHIRP_AMPLITUDE * np.sin(chirp_phase_radians)
+
+
+def generate_square_signal(): 
+    """Return a standalone square wave as normalized float samples."""
+    square_sample_count = int(CHIRP_DURATION_SECONDS * SAMPLE_RATE_HZ)
+    square_signal = CHIRP_AMPLITUDE * np.ones(square_sample_count, dtype=np.float32)
+    return square_signal
 
 
 def quantize_to_pcm16(signal):
@@ -70,9 +79,14 @@ def generate_signal():
     )
 
     chirp_start_sample = int(CHIRP_START_SECONDS * SAMPLE_RATE_HZ)
-    chirp_signal = generate_chirp_signal()
-    chirp_end_sample = chirp_start_sample + chirp_signal.size
-    signal[chirp_start_sample:chirp_end_sample] += chirp_signal
+    if(SIGNAL_TYPE == "chirp"):
+        chirp_signal = generate_chirp_signal()
+        chirp_end_sample = chirp_start_sample + chirp_signal.size
+        signal[chirp_start_sample:chirp_end_sample] += chirp_signal
+    elif(SIGNAL_TYPE == "square"):
+        square_signal = generate_square_signal()
+        chirp_end_sample = chirp_start_sample + square_signal.size
+        signal[chirp_start_sample:chirp_end_sample] += square_signal
 
     return signal
 
@@ -143,9 +157,15 @@ def save_plot(signal):
 
 def main():
     signal = generate_signal()
-    chirp_signal = generate_chirp_signal()
+
+    sample_signal = None
+    if(SIGNAL_TYPE == "chirp"):
+        sample_signal = generate_chirp_signal()
+    elif(SIGNAL_TYPE == "square"):
+        sample_signal = generate_square_signal()
+    
     pcm_signal = quantize_to_pcm16(signal).astype("<i2")
-    xcorr_chirp_signal = downsample_chirp_for_xcorr(chirp_signal)
+    xcorr_chirp_signal = downsample_chirp_for_xcorr(sample_signal)
 
     DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)
     pcm_signal.tofile(PCM_OUTPUT_PATH)

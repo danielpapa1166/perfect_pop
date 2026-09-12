@@ -204,10 +204,6 @@ int push_audio_buffer(const int16_t * const buf_in, size_t buf_size) {
 		return -1;
 	}
 
-	// shift the xcorr buffer 
-	/*
-    */
-
 	while(m_input_queue_mutex) {
 		// wait for the input queue to be free
 	}
@@ -221,9 +217,6 @@ int push_audio_buffer(const int16_t * const buf_in, size_t buf_size) {
 	
 	// release the input queue mutex
 	m_input_queue_mutex = 0;
-
-	
-	
 
 	return 0;
 }
