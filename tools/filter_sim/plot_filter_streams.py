@@ -53,10 +53,10 @@ def plot_spectrogram(axis, signal, title):
 def plot_streams(input_signal, output_signal):
     """Save overview, chirp-detail, and spectrogram comparisons."""
     time_seconds = np.arange(input_signal.size) / SAMPLE_RATE_HZ
-    input_detail_start_seconds = 4.975
-    input_detail_end_seconds = 5.125
-    output_detail_start_seconds = input_detail_start_seconds + XCORR_HISTORY_SECONDS
-    output_detail_end_seconds = input_detail_end_seconds + XCORR_HISTORY_SECONDS
+    input_detail_start_seconds = 4.95
+    input_detail_end_seconds = 5.15
+    output_detail_start_seconds = input_detail_start_seconds # + XCORR_HISTORY_SECONDS
+    output_detail_end_seconds = input_detail_end_seconds # + XCORR_HISTORY_SECONDS
     input_detail_mask = (time_seconds >= input_detail_start_seconds) & (
         time_seconds <= input_detail_end_seconds
     )
