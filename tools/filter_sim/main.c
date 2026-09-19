@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "pp_audio_buffer_config.h"
 #include "pp_dsp.h"
@@ -100,6 +101,8 @@ static void *producer_thread(void *argument)
             break;
         }
 
+        usleep(100);
+
         context->chunks_enqueued++;
         pthread_cond_signal(&context->input_available);
 
@@ -161,7 +164,7 @@ static void *consumer_thread(void *argument)
             return NULL;
         }
 
-        if (dsp_consume_audio_buffer() != 0) {
+        if (pop_audio_buffer() != 0) {
             fprintf(stderr, "Failed to consume an input chunk\n");
             context->failed = true;
             context->producer_finished = true;

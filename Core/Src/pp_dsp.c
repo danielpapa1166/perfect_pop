@@ -9,7 +9,9 @@
 #include "pp_dsp.h"
 #include "pp_audio_buffer_config.h"
 #include "pp_chirp_signal.h"
+#include "pp_circular_buff.h"
 
+//#define DEBUG
 
 #include <stdint.h>
 #include <string.h>
@@ -17,10 +19,27 @@
 #define FILTER_SIZE 					8U
 #define FILTER_DECIMATION_FACTOR 		6
 #define DECIMATED_BUFFER_SIZE  			(AUDIO_LEN / FILTER_DECIMATION_FACTOR)
+
+#define X_CORR_QUEUE_SIZE    			10
 #define X_CORR_FILTER_BUFFER_SIZE  		(DECIMATED_BUFFER_SIZE * 100)
 
 
 #define DSP_INPUT_QUEUE_SIZE    		10
+
+static circular_buffer_t m_input_circular_buffer;
+static circular_buffer_t m_output_circular_buffer;
+
+static int16_t m_input_buffer_48kHz_si16[AUDIO_LEN * DSP_INPUT_QUEUE_SIZE];
+static float m_output_buffer_8kHz_f32[DECIMATED_BUFFER_SIZE * X_CORR_QUEUE_SIZE];
+
+
+#define LOCAL_WORK_BUFFER_LEN  10 //(AUDIO_LEN*3)
+static int16_t m_local_work_buffer[AUDIO_LEN * LOCAL_WORK_BUFFER_LEN];
+static int16_t m_filter_buffer[AUDIO_LEN * LOCAL_WORK_BUFFER_LEN];
+static int16_t m_decimated_buffer[DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN];
+static float m_xcorr_input_buffer[DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN];
+static float m_xcorr_output_buffer[DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN];
+
 
 static int16_t m_input_queue[DSP_INPUT_QUEUE_SIZE][AUDIO_LEN];
 
@@ -31,11 +50,8 @@ static uint8_t m_input_queue_head = 0;
 static uint8_t m_input_queue_tail = 0; 
 
 
-static int16_t m_filter_buffer[AUDIO_LEN];
-static int16_t m_decimated_buffer[DECIMATED_BUFFER_SIZE];
 
-static float m_xcorr_input_buffer[X_CORR_FILTER_BUFFER_SIZE];
-static float m_xcorr_output_buffer[X_CORR_FILTER_BUFFER_SIZE];
+
 
 static int m_filter_type = 3;
 
@@ -130,23 +146,24 @@ static void matched_filter(const int16_t * const buf_in, size_t buf_size, int16_
 
 
 static void x_corr_filter(const float * const buf_in, size_t buf_size, float * const buf_out) {
-	size_t i;
+
 	float sum; 
-	for (i = 0; i < buf_size; i++) {
+	for (size_t buf_idx = buf_size - 1; buf_idx >= 0; buf_idx--) {
+		if (buf_idx == (size_t)-1) break; // Prevent underflow for size_t
 		
 		sum = 0.0f; 
 
-		for (size_t j = 0; j < FILTER_SIZE*10; j++) {
-			if (i >= j) {
+		for (size_t window_idx = 0; window_idx < FILTER_SIZE; window_idx++) {
 
-				float act_sample = (float)buf_in[i - j] 
-					* ((float)m_x_corr_base_signal[j]);
+			if(window_idx <= buf_idx) { // avoid accessing negative index in buf_in
+				float act_sample = (float)buf_in[buf_idx - window_idx] 
+					* ((float)m_x_corr_base_signal[window_idx]);
 
 				sum += act_sample;
 			}
 		}
 
-		buf_out[i] = (float)((sum) / FILTER_SIZE / 32767.0f);
+		buf_out[buf_idx] = (float)((sum) / FILTER_SIZE / 32767.0f);
 	}
 }
 
@@ -178,6 +195,17 @@ void dsp_filter_init(void) {
 			sizeof(m_matched_filter_sample));
 	}*/
 
+	cb_init(
+		&m_input_circular_buffer, 
+		m_input_buffer_48kHz_si16, 
+		DSP_INPUT_QUEUE_SIZE, 
+		AUDIO_LEN * sizeof(m_input_buffer_48kHz_si16[0]));
+	cb_init(
+		&m_output_circular_buffer, 
+		m_output_buffer_8kHz_f32, 
+		X_CORR_QUEUE_SIZE, 
+		DECIMATED_BUFFER_SIZE * sizeof(m_output_buffer_8kHz_f32[0]));
+
 }
 
 
@@ -204,67 +232,63 @@ int push_audio_buffer(const int16_t * const buf_in, size_t buf_size) {
 		return -1;
 	}
 
-	while(m_input_queue_mutex) {
-		// wait for the input queue to be free
-	}
-	
-	// acquire the input queue mutex
-	m_input_queue_mutex = 1;
-
-	// store new samples: 
-	memcpy(m_input_queue[m_input_queue_head], buf_in, buf_size * sizeof(int16_t));
-	m_input_queue_head = (m_input_queue_head + 1) % DSP_INPUT_QUEUE_SIZE;
-	
-	// release the input queue mutex
-	m_input_queue_mutex = 0;
+	cb_push(&m_input_circular_buffer, buf_in); // fixed audio length assumed
 
 	return 0;
 }
 
-int dsp_consume_audio_buffer(void) {
-	// acquire the input queue mutex
-	while(m_input_queue_mutex) {
-		// wait for the input queue to be free
-	}
-	m_input_queue_mutex = 1;
+int pop_audio_buffer(void) {
 
-	if(m_input_queue_head == m_input_queue_tail) {
-		// queue is empty
-		m_input_queue_mutex = 0;
-		return -1;
-	}
+	int16_t new_audio_sample_buff[AUDIO_LEN];
 
-	for (size_t i = X_CORR_FILTER_BUFFER_SIZE - DECIMATED_BUFFER_SIZE - 1; i != (size_t)(-1); i--) {
+	cb_pop(&m_input_circular_buffer, new_audio_sample_buff);
+
+
+
+	/*for (size_t i = X_CORR_FILTER_BUFFER_SIZE - DECIMATED_BUFFER_SIZE - 1; i != (size_t)(-1); i--) {
 		m_xcorr_input_buffer[i + DECIMATED_BUFFER_SIZE] = m_xcorr_input_buffer[i];
+	}*/
+
+	// shift and drop latest samples 
+	for (size_t i = 0; i < (LOCAL_WORK_BUFFER_LEN - 1) * AUDIO_LEN; i++) {
+		m_local_work_buffer[i] = m_local_work_buffer[i + AUDIO_LEN];
 	}
 
-	int16_t * const buf_in = m_input_queue[m_input_queue_tail];
-	size_t buf_size = AUDIO_LEN;
+	// update new samples: 
+	for (size_t i = 0; i < AUDIO_LEN; i++) {
+		m_local_work_buffer[(LOCAL_WORK_BUFFER_LEN - 1) * AUDIO_LEN + i] 
+			= new_audio_sample_buff[i];
+	}
 
-	// consume the audio buffer
-	anti_aliasing_filter(buf_in, buf_size, m_filter_buffer);
+	size_t buf_size = AUDIO_LEN * LOCAL_WORK_BUFFER_LEN;
+
+	anti_aliasing_filter(
+		m_local_work_buffer, buf_size, 
+		m_filter_buffer);
 	
-	m_input_queue_tail = (m_input_queue_tail + 1) % DSP_INPUT_QUEUE_SIZE;
-
-	// release the input queue mutex
-	m_input_queue_mutex = 0;
-
-	// working in local buffers
 
 	decimation_filter(
-		m_filter_buffer, buf_size, 
+		m_filter_buffer, 
+		buf_size, 
 		m_decimated_buffer, 
 		FILTER_DECIMATION_FACTOR);
 
-	for (size_t i = 0; i < DECIMATED_BUFFER_SIZE; i++) {
+	for (size_t i = 0; i < DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN; i++) {
 		m_xcorr_input_buffer[i] = m_decimated_buffer[i];
 	}
 
 
 	x_corr_filter(
 		m_xcorr_input_buffer,
-		X_CORR_FILTER_BUFFER_SIZE, 
+		DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN, 
 		m_xcorr_output_buffer);
+
+
+	float * xcorr_output_ptr = &m_xcorr_output_buffer[
+		DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN - 1 - (2 * DECIMATED_BUFFER_SIZE)
+	];
+
+	cb_push(&m_output_circular_buffer, xcorr_output_ptr);
 
 
 	return 0; 
@@ -272,9 +296,22 @@ int dsp_consume_audio_buffer(void) {
 
 
 void get_xcorr_buffer_48kHz(float * const buf_out) {
-	size_t j; 
-	for (size_t i = 0; i < AUDIO_LEN; i++) {
-		j = X_CORR_FILTER_BUFFER_SIZE - (i / FILTER_DECIMATION_FACTOR) - 1;
-		buf_out[i] = m_xcorr_output_buffer[j];
+
+	float temp_buf[DECIMATED_BUFFER_SIZE]; 
+
+	volatile cb_status_t cb_stat; 
+	
+	do {
+		cb_stat = cb_pop(&m_output_circular_buffer, temp_buf);
+	} while(cb_stat == CB_EMPTY);
+
+	if(cb_stat != CB_OK) {
+		return;
+	}
+
+	for (size_t i = 0; i < DECIMATED_BUFFER_SIZE; i++) {
+		for (size_t j = 0; j < FILTER_DECIMATION_FACTOR; j++) {
+			buf_out[i * FILTER_DECIMATION_FACTOR + j] = temp_buf[i];
+		}
 	}
 }

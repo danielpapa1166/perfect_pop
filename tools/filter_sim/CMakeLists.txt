@@ -7,6 +7,7 @@ find_package(Threads REQUIRED)
 add_executable(filter_sim
     main.c
     "${CMAKE_CURRENT_LIST_DIR}/../../Core/Src/pp_dsp.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../../Core/Src/pp_circular_buff.c"
 )
 
 target_compile_features(filter_sim PRIVATE c_std_11)
