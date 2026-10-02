@@ -27,6 +27,8 @@
 #include "pp_sai.h"
 #include "pp_sai_test_tone.h"
 #include "pp_uart.h"
+#include "pp_dsp.h"
+#include "pp_audio_buffer_config.h"
 #include <string.h>
 /* USER CODE END Includes */
 
@@ -83,19 +85,26 @@ const osThreadAttr_t defaultTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for myTask02 */
-osThreadId_t myTask02Handle;
-const osThreadAttr_t myTask02_attributes = {
-  .name = "myTask02",
+/* Definitions for audio_producer */
+osThreadId_t audio_producerHandle;
+const osThreadAttr_t audio_producer_attributes = {
+  .name = "audio_producer",
+  .stack_size = 1280 * 4,
+  .priority = (osPriority_t) osPriorityNormal7,
+};
+/* Definitions for uart_handler */
+osThreadId_t uart_handlerHandle;
+const osThreadAttr_t uart_handler_attributes = {
+  .name = "uart_handler",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
-/* Definitions for myTask03 */
-osThreadId_t myTask03Handle;
-const osThreadAttr_t myTask03_attributes = {
-  .name = "myTask03",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+/* Definitions for audio_filter */
+osThreadId_t audio_filterHandle;
+const osThreadAttr_t audio_filter_attributes = {
+  .name = "audio_filter",
+  .stack_size = 1280 * 4,
+  .priority = (osPriority_t) osPriorityNormal7,
 };
 /* USER CODE BEGIN PV */
 
@@ -121,8 +130,9 @@ static void MX_CRC_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C4_Init(void);
 void StartDefaultTask(void *argument);
-void StartTask02(void *argument);
-void StartTask03(void *argument);
+void start_audio_producer(void *argument);
+void start_uart_handler(void *argument);
+void start_audio_filter(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -217,11 +227,14 @@ int main(void)
   /* creation of defaultTask */
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
-  /* creation of myTask02 */
-  myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
+  /* creation of audio_producer */
+  audio_producerHandle = osThreadNew(start_audio_producer, NULL, &audio_producer_attributes);
 
-  /* creation of myTask03 */
-  myTask03Handle = osThreadNew(StartTask03, NULL, &myTask03_attributes);
+  /* creation of uart_handler */
+  uart_handlerHandle = osThreadNew(start_uart_handler, NULL, &uart_handler_attributes);
+
+  /* creation of audio_filter */
+  audio_filterHandle = osThreadNew(start_audio_filter, NULL, &audio_filter_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -1268,21 +1281,21 @@ void StartDefaultTask(void *argument)
   for(;;)
   {
 
-    osDelay(100);
+    osDelay(10000);
   }
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartTask02 */
+/* USER CODE BEGIN Header_start_audio_producer */
 /**
-* @brief Function implementing the myTask02 thread.
+* @brief Function implementing the audio_producer thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartTask02 */
-void StartTask02(void *argument)
+/* USER CODE END Header_start_audio_producer */
+void start_audio_producer(void *argument)
 {
-  /* USER CODE BEGIN StartTask02 */
+  /* USER CODE BEGIN start_audio_producer */
   static volatile int sai_init_status;
 
   sai_init_status = sai_init(&hsai_BlockA1, &hdma_sai1_a, &hi2c4);
@@ -1302,22 +1315,55 @@ void StartTask02(void *argument)
   const int ret = exec_pdm_task(&hdfsdm1_filter0);
   (void) ret;
 #endif
-  /* USER CODE END StartTask02 */
+  /* USER CODE END start_audio_producer */
 }
 
-/* USER CODE BEGIN Header_StartTask03 */
+/* USER CODE BEGIN Header_start_uart_handler */
 /**
-* @brief Function implementing the myTask03 thread.
+* @brief Function implementing the uart_handler thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartTask03 */
-void StartTask03(void *argument)
+/* USER CODE END Header_start_uart_handler */
+void start_uart_handler(void *argument)
 {
-  /* USER CODE BEGIN StartTask03 */
-  /* Infinite loop */
+  /* USER CODE BEGIN start_uart_handler */
   (void) exec_uart_task(&huart1);
-  /* USER CODE END StartTask03 */
+  /* USER CODE END start_uart_handler */
+}
+
+/* USER CODE BEGIN Header_start_audio_filter */
+/**
+* @brief Function implementing the audio_filter thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_audio_filter */
+void start_audio_filter(void *argument)
+{
+  /* USER CODE BEGIN start_audio_filter */
+
+  static float xcorr_out_f[AUDIO_LEN];
+  static int16_t xcorr_out_s16[AUDIO_LEN];
+
+
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+    const int filter_res = pop_audio_buffer();
+    if(filter_res == 0) {
+    	// no error
+    	/*get_xcorr_buffer_48kHz(xcorr_out_f);
+
+    	for(int i = 0; i < AUDIO_LEN; i ++) {
+    		xcorr_out_s16[i] = (int16_t)xcorr_out_f[i];
+    	}
+
+    	send_uart_int16(xcorr_out_s16, AUDIO_LEN);*/
+    }
+  }
+  /* USER CODE END start_audio_filter */
 }
 
 /**
