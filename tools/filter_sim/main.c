@@ -18,6 +18,9 @@
 
 _Static_assert(sizeof(float) == 4U, "The simulator output requires 32-bit floats");
 
+static const char *m_input_path = FILTER_SIM_INPUT_PATH;
+static const char *m_output_path = FILTER_SIM_OUTPUT_PATH;
+
 typedef struct {
     pthread_mutex_t mutex;
     pthread_cond_t input_available;
@@ -57,16 +60,16 @@ static void *producer_thread(void *argument)
     float xcorr_buffer[AUDIO_LEN];
     size_t samples_read;
 
-    input_file = fopen(FILTER_SIM_INPUT_PATH, "rb");
+    input_file = fopen(m_input_path, "rb");
     if (input_file == NULL) {
-        perror(FILTER_SIM_INPUT_PATH);
+        perror(m_input_path);
         mark_failed(context);
         return NULL;
     }
 
-    output_file = fopen(FILTER_SIM_OUTPUT_PATH, "wb");
+    output_file = fopen(m_output_path, "wb");
     if (output_file == NULL) {
-        perror(FILTER_SIM_OUTPUT_PATH);
+        perror(m_output_path);
         fclose(input_file);
         mark_failed(context);
         return NULL;
@@ -124,7 +127,7 @@ static void *producer_thread(void *argument)
 
         if (fwrite(xcorr_buffer, sizeof(xcorr_buffer[0]), chunk_size,
                    output_file) != chunk_size) {
-            perror(FILTER_SIM_OUTPUT_PATH);
+            perror(m_output_path);
             mark_failed(context);
             break;
         }
@@ -132,13 +135,13 @@ static void *producer_thread(void *argument)
     }
 
     if (ferror(input_file) != 0) {
-        perror(FILTER_SIM_INPUT_PATH);
+        perror(m_input_path);
         mark_failed(context);
     }
 
     fclose(input_file);
     if (fclose(output_file) != 0) {
-        perror(FILTER_SIM_OUTPUT_PATH);
+        perror(m_output_path);
         mark_failed(context);
     }
 
@@ -180,7 +183,7 @@ static void *consumer_thread(void *argument)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     simulation_context_t context = {
         .mutex = PTHREAD_MUTEX_INITIALIZER,
@@ -189,6 +192,15 @@ int main(void)
     };
     pthread_t producer;
     pthread_t consumer;
+
+    if (argc != 1 && argc != 3) {
+        fprintf(stderr, "Usage: %s [input.pcm output.raw]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+    if (argc == 3) {
+        m_input_path = argv[1];
+        m_output_path = argv[2];
+    }
 
     dsp_filter_init();
 
@@ -212,9 +224,9 @@ int main(void)
     }
 
     printf("Processed %zu chunks of %u samples from %s\n", context.chunks_consumed,
-           AUDIO_LEN, FILTER_SIM_INPUT_PATH);
+           AUDIO_LEN, m_input_path);
     printf("Producer wrote %zu x-correlation chunks to %s\n", context.chunks_written,
-           FILTER_SIM_OUTPUT_PATH);
+           m_output_path);
 
     return EXIT_SUCCESS;
 }
