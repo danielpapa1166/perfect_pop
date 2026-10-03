@@ -8,8 +8,17 @@
 
 #include "pp_dsp.h"
 #include "pp_audio_buffer_config.h"
-#include "pp_chirp_signal.h"
 #include "pp_circular_buff.h"
+
+#ifdef PP_XCORR_USE_SNAP_TEMPLATE
+#include "pp_snap_template.h"
+#define PP_XCORR_TEMPLATE			pp_snap_template
+#define PP_XCORR_TEMPLATE_COUNT		PP_SNAP_TEMPLATE_SAMPLE_COUNT
+#else
+#include "pp_chirp_signal.h"
+#define PP_XCORR_TEMPLATE			pp_chirp_signal
+#define PP_XCORR_TEMPLATE_COUNT		PP_CHIRP_SIGNAL_SAMPLE_COUNT
+#endif
 
 //#define DEBUG
 
@@ -17,6 +26,7 @@
 #include <string.h>
 
 #define FILTER_SIZE 					8U
+#define XCORR_FILTER_SIZE 				PP_XCORR_TEMPLATE_COUNT
 #define FILTER_DECIMATION_FACTOR 		6
 #define DECIMATED_BUFFER_SIZE  			(AUDIO_LEN / FILTER_DECIMATION_FACTOR)
 
@@ -33,7 +43,7 @@ static int16_t m_input_buffer_48kHz_si16[AUDIO_LEN * DSP_INPUT_QUEUE_SIZE];
 static float m_output_buffer_8kHz_f32[DECIMATED_BUFFER_SIZE * X_CORR_QUEUE_SIZE];
 
 
-#define LOCAL_WORK_BUFFER_LEN  10 //(AUDIO_LEN*3)
+#define LOCAL_WORK_BUFFER_LEN  2 //(AUDIO_LEN*3)
 static int16_t m_local_work_buffer[AUDIO_LEN * LOCAL_WORK_BUFFER_LEN];
 static int16_t m_filter_buffer[AUDIO_LEN * LOCAL_WORK_BUFFER_LEN];
 static int16_t m_decimated_buffer[DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN];
@@ -65,7 +75,7 @@ static const float m_matched_filter_sample[FILTER_SIZE] = {
 };
 
 //static float m_matched_filter_10[FILTER_SIZE*10];
-const int16_t * const m_x_corr_base_signal = pp_chirp_signal;
+const int16_t * const m_x_corr_base_signal = PP_XCORR_TEMPLATE;
 
 static void all_pass_filter(const int16_t * const buf_in, size_t buf_size, int16_t * const buf_out) {
 	size_t i;
@@ -120,26 +130,20 @@ static void matched_filter(const int16_t * const buf_in, size_t buf_size, int16_
 	size_t i;
 	float sum; 
 	for (i = 0; i < decimated_size; i++) {
-		
 		sum = 0.0f; 
-		if (i < FILTER_SIZE*10) {
-			sum = 0; //m_decimated_buffer[i] * (int64_t)(m_matched_filter_sample[i] * 32767);
-		}
-		else {
-			for (size_t j = 0; j < FILTER_SIZE*10; j++) {
-				if (i >= j) {
+		for (size_t j = 0; j < XCORR_FILTER_SIZE; j++) {
+			if (i >= j) {
 
-					float act_sample = (float)m_decimated_buffer[i - j] 
-						* ((float) m_x_corr_base_signal[j]);
+				float act_sample = (float)m_decimated_buffer[i - j] 
+					* ((float) m_x_corr_base_signal[XCORR_FILTER_SIZE - 1 - j]);
 
-					sum += act_sample;
-				}
+				sum += act_sample;
 			}
-
 		}
+
 
 		for (size_t j = 0; j < FILTER_DECIMATION_FACTOR; j++) {
-			buf_out[i * FILTER_DECIMATION_FACTOR + j] = (int16_t)((sum) / FILTER_SIZE / 32767.0f);
+			buf_out[i * FILTER_DECIMATION_FACTOR + j] = (int16_t)((sum) / 32767.0f / 1000000.0f);
 		}
 	}
 }
@@ -153,17 +157,18 @@ static void x_corr_filter(const float * const buf_in, size_t buf_size, float * c
 		
 		sum = 0.0f; 
 
-		for (size_t window_idx = 0; window_idx < FILTER_SIZE; window_idx++) {
+		for (size_t window_idx = 0; window_idx < XCORR_FILTER_SIZE; window_idx++) {
 
 			if(window_idx <= buf_idx) { // avoid accessing negative index in buf_in
+				// reversed template index: correlation, not convolution
 				float act_sample = (float)buf_in[buf_idx - window_idx] 
-					* ((float)m_x_corr_base_signal[window_idx]);
+					* ((float) m_x_corr_base_signal[XCORR_FILTER_SIZE - 1 - window_idx]);
 
 				sum += act_sample;
 			}
 		}
 
-		buf_out[buf_idx] = (float)((sum) / FILTER_SIZE / 32767.0f);
+		buf_out[buf_idx] = (float)((sum) / XCORR_FILTER_SIZE / 32767.0f);
 	}
 }
 
@@ -241,9 +246,12 @@ int pop_audio_buffer(void) {
 
 	int16_t new_audio_sample_buff[AUDIO_LEN];
 
-	cb_pop(&m_input_circular_buffer, new_audio_sample_buff);
+	const cb_status_t cb_stat = cb_pop(
+		&m_input_circular_buffer, new_audio_sample_buff);
 
-
+	if(cb_stat != CB_OK) {
+		return cb_stat;
+	}
 
 	/*for (size_t i = X_CORR_FILTER_BUFFER_SIZE - DECIMATED_BUFFER_SIZE - 1; i != (size_t)(-1); i--) {
 		m_xcorr_input_buffer[i + DECIMATED_BUFFER_SIZE] = m_xcorr_input_buffer[i];
@@ -285,7 +293,7 @@ int pop_audio_buffer(void) {
 
 
 	float * xcorr_output_ptr = &m_xcorr_output_buffer[
-		DECIMATED_BUFFER_SIZE * LOCAL_WORK_BUFFER_LEN - 1 - (2 * DECIMATED_BUFFER_SIZE)
+		DECIMATED_BUFFER_SIZE * (LOCAL_WORK_BUFFER_LEN - 1) - 1
 	];
 
 	cb_push(&m_output_circular_buffer, xcorr_output_ptr);

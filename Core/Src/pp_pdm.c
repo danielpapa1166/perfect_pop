@@ -164,11 +164,13 @@ int exec_pdm_task(DFSDM_Filter_HandleTypeDef * const dfsdm_filter_hdl) {
 				xcorr_buffer_48kHz_int16[i] = (int16_t)(xcorr_buffer_48kHz[i] * conv_val);
 			}*/
 
+		    push_audio_buffer(micAudioBuf, AUDIO_LEN);
+
 		    //send_uart_int32(test_buffer, sizeof(test_buffer) / sizeof(test_buffer[0]));
-		    const int res = send_uart_int16(micAudioBuf, AUDIO_LEN);
+		    /*const int res = send_uart_int16(micAudioBuf, AUDIO_LEN);
 		    if(res == -1) {
 		    	m_uart_send_failed ++;
-		    }
+		    }*/
 
 		    saiDmaStatus = sai_submit_mono_block(micAudioBuf, AUDIO_LEN);
 		    if (saiDmaStatus != 0) {

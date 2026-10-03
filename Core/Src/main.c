@@ -1354,13 +1354,13 @@ void start_audio_filter(void *argument)
     const int filter_res = pop_audio_buffer();
     if(filter_res == 0) {
     	// no error
-    	/*get_xcorr_buffer_48kHz(xcorr_out_f);
+    	get_xcorr_buffer_48kHz(xcorr_out_f);
 
     	for(int i = 0; i < AUDIO_LEN; i ++) {
     		xcorr_out_s16[i] = (int16_t)xcorr_out_f[i];
     	}
 
-    	send_uart_int16(xcorr_out_s16, AUDIO_LEN);*/
+    	send_uart_int16(xcorr_out_s16, AUDIO_LEN);
     }
   }
   /* USER CODE END start_audio_filter */
