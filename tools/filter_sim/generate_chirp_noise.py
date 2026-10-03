@@ -6,7 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-SIGNAL_TYPE = "square"  # Options: "chirp", "square"
+SIGNAL_TYPE = "chirp"  # Options: "chirp", "square", "sawtooth"
 
 
 SAMPLE_RATE_HZ = 48_000
@@ -15,10 +15,10 @@ XCORR_SAMPLE_RATE_HZ = SAMPLE_RATE_HZ // XCORR_DECIMATION_FACTOR
 DURATION_SECONDS = 10
 CHIRP_START_SECONDS = 5.0
 CHIRP_DURATION_SECONDS = 0.008
-CHIRP_START_FREQUENCY_HZ = 100.0
-CHIRP_END_FREQUENCY_HZ = 800.0
+CHIRP_START_FREQUENCY_HZ = 2000.0# 950.0
+CHIRP_END_FREQUENCY_HZ = 2000.0# 1000.0
 CHIRP_AMPLITUDE = 0.70
-NOISE_STANDARD_DEVIATION = 0.0
+NOISE_STANDARD_DEVIATION = 0.70
 RANDOM_SEED = 20260912
 
 DATA_DIRECTORY = Path(__file__).resolve().parent / "data"
@@ -50,6 +50,13 @@ def generate_square_signal():
     square_sample_count = int(CHIRP_DURATION_SECONDS * SAMPLE_RATE_HZ)
     square_signal = CHIRP_AMPLITUDE * np.ones(square_sample_count, dtype=np.float32)
     return square_signal
+
+def generate_sawtooth_signal():
+    """Return a standalone sawtooth wave as normalized float samples."""
+    sawtooth_sample_count = int(CHIRP_DURATION_SECONDS * SAMPLE_RATE_HZ)
+    sawtooth_time_seconds = np.arange(sawtooth_sample_count) / SAMPLE_RATE_HZ
+    sawtooth_signal = CHIRP_AMPLITUDE * (sawtooth_time_seconds / CHIRP_DURATION_SECONDS)
+    return sawtooth_signal
 
 
 def quantize_to_pcm16(signal):
@@ -87,6 +94,10 @@ def generate_signal():
         square_signal = generate_square_signal()
         chirp_end_sample = chirp_start_sample + square_signal.size
         signal[chirp_start_sample:chirp_end_sample] += square_signal
+    elif(SIGNAL_TYPE == "sawtooth"):
+        sawtooth_signal = generate_sawtooth_signal()
+        chirp_end_sample = chirp_start_sample + sawtooth_signal.size
+        signal[chirp_start_sample:chirp_end_sample] += sawtooth_signal
 
     return signal
 
@@ -163,6 +174,8 @@ def main():
         sample_signal = generate_chirp_signal()
     elif(SIGNAL_TYPE == "square"):
         sample_signal = generate_square_signal()
+    elif(SIGNAL_TYPE == "sawtooth"):
+        sample_signal = generate_sawtooth_signal()
     
     pcm_signal = quantize_to_pcm16(signal).astype("<i2")
     xcorr_chirp_signal = downsample_chirp_for_xcorr(sample_signal)
