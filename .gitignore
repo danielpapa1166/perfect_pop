@@ -6,3 +6,5 @@ Drivers
 .project
 perfect_pop Debug.launch
 **/__pycache__/
+tools/filter_sim/build
+tools/filter_sim/data

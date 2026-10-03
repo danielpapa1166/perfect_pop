@@ -4,6 +4,7 @@
 import argparse
 import struct
 import sys
+import threading
 
 import serial
 
@@ -19,10 +20,11 @@ FRAME_TYPES = {
 }
 
 
-def read_frames(ser: serial.Serial):
+def read_frames(ser: serial.Serial,
+                stop_event: threading.Event | None = None):
     """Yield tuples of signed integer values from validated UART frames."""
     buffer = bytearray()
-    while True:
+    while stop_event is None or not stop_event.is_set():
         buffer += ser.read(max(1, ser.in_waiting))
 
         marker_pos = -1

@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug filter_sim",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/filter_sim/build/filter_sim",
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Attach to filter_sim",
+      "type": "cppdbg",
+      "request": "attach",
+      "program": "${workspaceFolder}/tools/filter_sim/build/filter_sim",
+      "processId": "${command:pickProcess}",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb"
+    }
+  ]
+}

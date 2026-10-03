@@ -14,7 +14,7 @@
 #define WM8994_I2C_ADDRESS          0x34U
 #define WM8994_I2C_READY_TRIALS     3U
 #define WM8994_I2C_TIMEOUT_MS       100U
-#define WM8994_OUTPUT_VOLUME         80U
+#define WM8994_OUTPUT_VOLUME         40U
 #define SAI_PLLI2S_N                172U
 #define SAI_PLLI2S_Q                  7U
 #define SAI_PLLI2S_DIVQ               1U
