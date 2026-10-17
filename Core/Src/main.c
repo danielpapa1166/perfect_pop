@@ -1200,7 +1200,7 @@ static void MX_FMC_Init(void)
 
   HAL_Delay(1);
 
-  HAL_SDRAM_ProgramRefreshRate(&hsdram1, 0x0603);
+  HAL_SDRAM_ProgramRefreshRate(&hsdram1, 0x056A);
 
   /* USER CODE END FMC_Init 2 */
 }
