@@ -735,9 +735,9 @@ static void MX_LTDC_Init(void)
   hltdc.Init.VerticalSync = 0;
   hltdc.Init.AccumulatedHBP = 1;
   hltdc.Init.AccumulatedVBP = 1;
-  hltdc.Init.AccumulatedActiveW = 201;
+  hltdc.Init.AccumulatedActiveW = 801;
   hltdc.Init.AccumulatedActiveH = 481;
-  hltdc.Init.TotalWidth = 202;
+  hltdc.Init.TotalWidth = 802;
   hltdc.Init.TotalHeigh = 482;
   hltdc.Init.Backcolor.Blue = 0;
   hltdc.Init.Backcolor.Green = 0;
@@ -750,7 +750,7 @@ static void MX_LTDC_Init(void)
   pLayerCfg.WindowX1 = 800;
   pLayerCfg.WindowY0 = 0;
   pLayerCfg.WindowY1 = 480;
-  pLayerCfg.PixelFormat = LTDC_PIXEL_FORMAT_RGB565;
+  pLayerCfg.PixelFormat = LTDC_PIXEL_FORMAT_ARGB8888;
   pLayerCfg.Alpha = 255;
   pLayerCfg.Alpha0 = 0;
   pLayerCfg.BlendingFactor1 = LTDC_BLENDING_FACTOR1_PAxCA;
@@ -1634,9 +1634,13 @@ void OTM8009A_IO_Delay(uint32_t Delay) {
   if (osKernelGetState() == osKernelRunning) {
     const uint64_t ticks =
         (((uint64_t)Delay * osKernelGetTickFreq() + 999U) / 1000U) + 1U;
-    if ((ticks >= osWaitForever) || (osDelay((uint32_t)ticks) != osOK)) {
-      Error_Handler();
+
+    if(ticks >= osWaitForever) {
+    	Error_Handler();
     }
+    
+    const osStatus_t delay_res = osDelay((uint32_t)ticks);
+    (void) delay_res;
   }
   else {
     // Startup, or scheduler locked: use the independent TIM6 HAL time base.
@@ -1758,7 +1762,7 @@ void start_display_control(void *argument)
 {
   /* USER CODE BEGIN start_display_control */
 
-  display_init();
+  display_init(&hltdc, &hdsi);
 
   /* Infinite loop */
   for(;;)
