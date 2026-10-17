@@ -119,8 +119,8 @@ const osThreadAttr_t audio_filter_attributes = {
 osThreadId_t display_controlHandle;
 const osThreadAttr_t display_control_attributes = {
   .name = "display_control",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow5,
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityBelowNormal7,
 };
 /* USER CODE BEGIN PV */
 
@@ -284,7 +284,6 @@ int main(void)
   		GPIO_PIN_SET);
 
   HAL_Delay(10);
-
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -414,7 +413,8 @@ void PeriphCommonClock_Config(void)
   */
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LTDC|RCC_PERIPHCLK_SAI1;
   PeriphClkInitStruct.PLLSAI.PLLSAIN = 96;
-  PeriphClkInitStruct.PLLSAI.PLLSAIR = 2;
+  /* LTDC: 192 MHz / 3 / 2 = 32 MHz, within two-lane RGB888 bandwidth. */
+  PeriphClkInitStruct.PLLSAI.PLLSAIR = 3;
   PeriphClkInitStruct.PLLSAI.PLLSAIQ = 3;
   PeriphClkInitStruct.PLLSAI.PLLSAIP = RCC_PLLSAIP_DIV4;
   PeriphClkInitStruct.PLLSAIDivQ = 1;
@@ -576,7 +576,7 @@ static void MX_DSIHOST_DSI_Init(void)
   hdsi.Instance = DSI;
   hdsi.Init.AutomaticClockLaneControl = DSI_AUTO_CLK_LANE_CTRL_DISABLE;
   hdsi.Init.TXEscapeCkdiv = 4;
-  hdsi.Init.NumberOfLanes = DSI_ONE_DATA_LANE;
+  hdsi.Init.NumberOfLanes = DSI_TWO_DATA_LANES;
   PLLInit.PLLNDIV = 20;
   PLLInit.PLLIDF = DSI_PLL_IN_DIV1;
   PLLInit.PLLODF = DSI_PLL_OUT_DIV1;
@@ -602,7 +602,7 @@ static void MX_DSIHOST_DSI_Init(void)
   PhyTimings.DataLaneHS2LPTime = 15;
   PhyTimings.DataLaneLP2HSTime = 25;
   PhyTimings.DataLaneMaxReadTime = 0;
-  PhyTimings.StopWaitTime = 0;
+  PhyTimings.StopWaitTime = 10;
   if (HAL_DSI_ConfigPhyTimer(&hdsi, &PhyTimings) != HAL_OK)
   {
     Error_Handler();
@@ -1761,14 +1761,13 @@ void start_audio_filter(void *argument)
 void start_display_control(void *argument)
 {
   /* USER CODE BEGIN start_display_control */
-
   display_init(&hltdc, &hdsi);
 
   /* Infinite loop */
   for(;;)
   {
+    osDelay(10);
     display_cyclic_exec_funciton();
-    osDelay(1);
   }
   /* USER CODE END start_display_control */
 }
