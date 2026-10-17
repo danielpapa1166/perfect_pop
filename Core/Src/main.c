@@ -24,12 +24,17 @@
 /* USER CODE BEGIN Includes */
 // #include "pdm2pcm_glo.h"
 #include "pp_pdm.h"
+#include "pp_display_control.h"
 #include "pp_sai.h"
 #include "pp_sai_test_tone.h"
 #include "pp_uart.h"
 #include "pp_dsp.h"
 #include "pp_audio_buffer_config.h"
 #include <string.h>
+#include <sys/types.h>
+
+#include "otm8009a.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,6 +61,10 @@ CRC_HandleTypeDef hcrc;
 DFSDM_Filter_HandleTypeDef hdfsdm1_filter0;
 DFSDM_Channel_HandleTypeDef hdfsdm1_channel0;
 DMA_HandleTypeDef hdma_dfsdm1_flt0;
+
+DMA2D_HandleTypeDef hdma2d;
+
+DSI_HandleTypeDef hdsi;
 
 I2C_HandleTypeDef hi2c4;
 
@@ -106,6 +115,13 @@ const osThreadAttr_t audio_filter_attributes = {
   .stack_size = 1280 * 4,
   .priority = (osPriority_t) osPriorityNormal7,
 };
+/* Definitions for display_control */
+osThreadId_t display_controlHandle;
+const osThreadAttr_t display_control_attributes = {
+  .name = "display_control",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow5,
+};
 /* USER CODE BEGIN PV */
 
 
@@ -115,6 +131,7 @@ const osThreadAttr_t audio_filter_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
+static void MPU_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_FMC_Init(void);
@@ -129,12 +146,73 @@ static void MX_DFSDM1_Init(void);
 static void MX_CRC_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C4_Init(void);
+static void MX_DMA2D_Init(void);
+static void MX_DSIHOST_DSI_Init(void);
 void StartDefaultTask(void *argument);
 void start_audio_producer(void *argument);
 void start_uart_handler(void *argument);
 void start_audio_filter(void *argument);
+void start_display_control(void *argument);
 
 /* USER CODE BEGIN PFP */
+
+#define FB_ADDR  0xC0000000UL
+#define LCD_W    800U
+#define LCD_H    480U
+
+
+
+HAL_StatusTypeDef Framebuffer_Config(void)
+{
+    LTDC_LayerCfgTypeDef layer = {0};
+
+    layer.WindowX0 = 0;
+    layer.WindowX1 = LCD_W;
+    layer.WindowY0 = 0;
+    layer.WindowY1 = LCD_H;
+
+    layer.PixelFormat = LTDC_PIXEL_FORMAT_ARGB8888;
+    layer.FBStartAdress = FB_ADDR;
+
+    layer.Alpha = 255;
+    layer.Alpha0 = 0;
+
+    layer.BlendingFactor1 =
+        LTDC_BLENDING_FACTOR1_PAxCA;
+    layer.BlendingFactor2 =
+        LTDC_BLENDING_FACTOR2_PAxCA;
+
+    layer.ImageWidth = LCD_W;
+    layer.ImageHeight = LCD_H;
+
+    const HAL_StatusTypeDef res = HAL_LTDC_ConfigLayer(&hltdc, &layer, 0);
+    return res;
+}
+
+
+void Framebuffer_Fill(void)
+{
+    volatile uint32_t *fb =
+        (volatile uint32_t *)FB_ADDR;
+
+    for (uint32_t y = 0; y < LCD_H; y++)
+    {
+        for (uint32_t x = 0; x < LCD_W; x++)
+        {
+            uint32_t color;
+
+            if (x < LCD_W / 3)
+                color = 0xFFFF0000; // Red
+            else if (x < 2 * LCD_W / 3)
+                color = 0xFF00FF00; // Green
+            else
+                color = 0xFF0000FF; // Blue
+
+            fb[y * LCD_W + x] = color;
+        }
+    }
+}
+
 
 /* USER CODE END PFP */
 
@@ -153,6 +231,9 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
+
+  /* MPU Configuration--------------------------------------------------------*/
+  MPU_Config();
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -188,6 +269,8 @@ int main(void)
   MX_CRC_Init();
   MX_USART1_UART_Init();
   MX_I2C4_Init();
+  MX_DMA2D_Init();
+  MX_DSIHOST_DSI_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_GPIO_WritePin(
@@ -200,7 +283,7 @@ int main(void)
   		LD_USER2_Pin,
   		GPIO_PIN_SET);
 
-  HAL_Delay(1000);
+  HAL_Delay(10);
 
   /* USER CODE END 2 */
 
@@ -236,8 +319,12 @@ int main(void)
   /* creation of audio_filter */
   audio_filterHandle = osThreadNew(start_audio_filter, NULL, &audio_filter_attributes);
 
+  /* creation of display_control */
+  display_controlHandle = osThreadNew(start_display_control, NULL, &display_control_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -281,7 +368,9 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI
+                              |RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
@@ -425,6 +514,154 @@ static void MX_DFSDM1_Init(void)
 }
 
 /**
+  * @brief DMA2D Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DMA2D_Init(void)
+{
+
+  /* USER CODE BEGIN DMA2D_Init 0 */
+
+  /* USER CODE END DMA2D_Init 0 */
+
+  /* USER CODE BEGIN DMA2D_Init 1 */
+
+  /* USER CODE END DMA2D_Init 1 */
+  hdma2d.Instance = DMA2D;
+  hdma2d.Init.Mode = DMA2D_M2M;
+  hdma2d.Init.ColorMode = DMA2D_OUTPUT_ARGB8888;
+  hdma2d.Init.OutputOffset = 0;
+  hdma2d.LayerCfg[1].InputOffset = 0;
+  hdma2d.LayerCfg[1].InputColorMode = DMA2D_INPUT_ARGB8888;
+  hdma2d.LayerCfg[1].AlphaMode = DMA2D_NO_MODIF_ALPHA;
+  hdma2d.LayerCfg[1].InputAlpha = 0;
+  hdma2d.LayerCfg[1].AlphaInverted = DMA2D_REGULAR_ALPHA;
+  hdma2d.LayerCfg[1].RedBlueSwap = DMA2D_RB_REGULAR;
+  if (HAL_DMA2D_Init(&hdma2d) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMA2D_ConfigLayer(&hdma2d, 1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DMA2D_Init 2 */
+
+  /* USER CODE END DMA2D_Init 2 */
+
+}
+
+/**
+  * @brief DSIHOST Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DSIHOST_DSI_Init(void)
+{
+
+  /* USER CODE BEGIN DSIHOST_Init 0 */
+
+  /* USER CODE END DSIHOST_Init 0 */
+
+  DSI_PLLInitTypeDef PLLInit = {0};
+  DSI_HOST_TimeoutTypeDef HostTimeouts = {0};
+  DSI_PHY_TimerTypeDef PhyTimings = {0};
+  DSI_LPCmdTypeDef LPCmd = {0};
+  DSI_CmdCfgTypeDef CmdCfg = {0};
+
+  /* USER CODE BEGIN DSIHOST_Init 1 */
+
+  /* USER CODE END DSIHOST_Init 1 */
+  hdsi.Instance = DSI;
+  hdsi.Init.AutomaticClockLaneControl = DSI_AUTO_CLK_LANE_CTRL_DISABLE;
+  hdsi.Init.TXEscapeCkdiv = 4;
+  hdsi.Init.NumberOfLanes = DSI_ONE_DATA_LANE;
+  PLLInit.PLLNDIV = 20;
+  PLLInit.PLLIDF = DSI_PLL_IN_DIV1;
+  PLLInit.PLLODF = DSI_PLL_OUT_DIV1;
+  if (HAL_DSI_Init(&hdsi, &PLLInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HostTimeouts.TimeoutCkdiv = 1;
+  HostTimeouts.HighSpeedTransmissionTimeout = 0;
+  HostTimeouts.LowPowerReceptionTimeout = 0;
+  HostTimeouts.HighSpeedReadTimeout = 0;
+  HostTimeouts.LowPowerReadTimeout = 0;
+  HostTimeouts.HighSpeedWriteTimeout = 0;
+  HostTimeouts.HighSpeedWritePrespMode = DSI_HS_PM_DISABLE;
+  HostTimeouts.LowPowerWriteTimeout = 0;
+  HostTimeouts.BTATimeout = 0;
+  if (HAL_DSI_ConfigHostTimeouts(&hdsi, &HostTimeouts) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PhyTimings.ClockLaneHS2LPTime = 28;
+  PhyTimings.ClockLaneLP2HSTime = 33;
+  PhyTimings.DataLaneHS2LPTime = 15;
+  PhyTimings.DataLaneLP2HSTime = 25;
+  PhyTimings.DataLaneMaxReadTime = 0;
+  PhyTimings.StopWaitTime = 0;
+  if (HAL_DSI_ConfigPhyTimer(&hdsi, &PhyTimings) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DSI_ConfigFlowControl(&hdsi, DSI_FLOW_CONTROL_BTA) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DSI_SetLowPowerRXFilter(&hdsi, 10000) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DSI_ConfigErrorMonitor(&hdsi, HAL_DSI_ERROR_NONE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  LPCmd.LPGenShortWriteNoP = DSI_LP_GSW0P_DISABLE;
+  LPCmd.LPGenShortWriteOneP = DSI_LP_GSW1P_DISABLE;
+  LPCmd.LPGenShortWriteTwoP = DSI_LP_GSW2P_DISABLE;
+  LPCmd.LPGenShortReadNoP = DSI_LP_GSR0P_DISABLE;
+  LPCmd.LPGenShortReadOneP = DSI_LP_GSR1P_DISABLE;
+  LPCmd.LPGenShortReadTwoP = DSI_LP_GSR2P_DISABLE;
+  LPCmd.LPGenLongWrite = DSI_LP_GLW_DISABLE;
+  LPCmd.LPDcsShortWriteNoP = DSI_LP_DSW0P_DISABLE;
+  LPCmd.LPDcsShortWriteOneP = DSI_LP_DSW1P_DISABLE;
+  LPCmd.LPDcsShortReadNoP = DSI_LP_DSR0P_DISABLE;
+  LPCmd.LPDcsLongWrite = DSI_LP_DLW_DISABLE;
+  LPCmd.LPMaxReadPacket = DSI_LP_MRDP_DISABLE;
+  LPCmd.AcknowledgeRequest = DSI_ACKNOWLEDGE_DISABLE;
+  if (HAL_DSI_ConfigCommand(&hdsi, &LPCmd) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  CmdCfg.VirtualChannelID = 0;
+  CmdCfg.ColorCoding = DSI_RGB888;
+  CmdCfg.CommandSize = 800;
+  CmdCfg.TearingEffectSource = DSI_TE_DSILINK;
+  CmdCfg.TearingEffectPolarity = DSI_TE_RISING_EDGE;
+  CmdCfg.HSPolarity = DSI_HSYNC_ACTIVE_LOW;
+  CmdCfg.VSPolarity = DSI_VSYNC_ACTIVE_LOW;
+  CmdCfg.DEPolarity = DSI_DATA_ENABLE_ACTIVE_HIGH;
+  CmdCfg.VSyncPol = DSI_VSYNC_FALLING;
+  CmdCfg.AutomaticRefresh = DSI_AR_ENABLE;
+  CmdCfg.TEAcknowledgeRequest = DSI_TE_ACKNOWLEDGE_DISABLE;
+  if (HAL_DSI_ConfigAdaptedCommandMode(&hdsi, &CmdCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DSI_SetGenericVCID(&hdsi, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DSIHOST_Init 2 */
+
+  /* USER CODE END DSIHOST_Init 2 */
+
+}
+
+/**
   * @brief I2C4 Initialization Function
   * @param None
   * @retval None
@@ -510,7 +747,7 @@ static void MX_LTDC_Init(void)
     Error_Handler();
   }
   pLayerCfg.WindowX0 = 0;
-  pLayerCfg.WindowX1 = 200;
+  pLayerCfg.WindowX1 = 800;
   pLayerCfg.WindowY0 = 0;
   pLayerCfg.WindowY1 = 480;
   pLayerCfg.PixelFormat = LTDC_PIXEL_FORMAT_RGB565;
@@ -519,7 +756,7 @@ static void MX_LTDC_Init(void)
   pLayerCfg.BlendingFactor1 = LTDC_BLENDING_FACTOR1_PAxCA;
   pLayerCfg.BlendingFactor2 = LTDC_BLENDING_FACTOR2_PAxCA;
   pLayerCfg.FBStartAdress = 0xC0000000;
-  pLayerCfg.ImageWidth = 200;
+  pLayerCfg.ImageWidth = 800;
   pLayerCfg.ImageHeight = 480;
   pLayerCfg.Backcolor.Blue = 0;
   pLayerCfg.Backcolor.Green = 0;
@@ -927,18 +1164,18 @@ static void MX_FMC_Init(void)
   hsdram1.Init.RowBitsNumber = FMC_SDRAM_ROW_BITS_NUM_12;
   hsdram1.Init.MemoryDataWidth = FMC_SDRAM_MEM_BUS_WIDTH_32;
   hsdram1.Init.InternalBankNumber = FMC_SDRAM_INTERN_BANKS_NUM_4;
-  hsdram1.Init.CASLatency = FMC_SDRAM_CAS_LATENCY_1;
+  hsdram1.Init.CASLatency = FMC_SDRAM_CAS_LATENCY_3;
   hsdram1.Init.WriteProtection = FMC_SDRAM_WRITE_PROTECTION_DISABLE;
-  hsdram1.Init.SDClockPeriod = FMC_SDRAM_CLOCK_DISABLE;
-  hsdram1.Init.ReadBurst = FMC_SDRAM_RBURST_DISABLE;
+  hsdram1.Init.SDClockPeriod = FMC_SDRAM_CLOCK_PERIOD_2;
+  hsdram1.Init.ReadBurst = FMC_SDRAM_RBURST_ENABLE;
   hsdram1.Init.ReadPipeDelay = FMC_SDRAM_RPIPE_DELAY_0;
   /* SdramTiming */
-  SdramTiming.LoadToActiveDelay = 16;
-  SdramTiming.ExitSelfRefreshDelay = 16;
-  SdramTiming.SelfRefreshTime = 16;
-  SdramTiming.RowCycleDelay = 16;
-  SdramTiming.WriteRecoveryTime = 16;
-  SdramTiming.RPDelay = 16;
+  SdramTiming.LoadToActiveDelay = 2;
+  SdramTiming.ExitSelfRefreshDelay = 7;
+  SdramTiming.SelfRefreshTime = 4;
+  SdramTiming.RowCycleDelay = 7;
+  SdramTiming.WriteRecoveryTime = 2;
+  SdramTiming.RPDelay = 2;
   SdramTiming.RCDDelay = 16;
 
   if (HAL_SDRAM_Init(&hsdram1, &SdramTiming) != HAL_OK)
@@ -947,6 +1184,82 @@ static void MX_FMC_Init(void)
   }
 
   /* USER CODE BEGIN FMC_Init 2 */
+
+  // config SDRAM: see example code: 
+  // https://github.com/STMicroelectronics/32f769idiscovery-bsp/blob/main/stm32f769i_discovery_sdram.c
+
+
+  FMC_SDRAM_CommandTypeDef Command;
+
+  // --------------------------------------------------------------------------
+  // clock configuration enable command
+  // --------------------------------------------------------------------------
+
+  Command.CommandMode = FMC_SDRAM_CMD_CLK_ENABLE;
+  Command.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK1;
+  Command.AutoRefreshNumber = 1;
+  Command.ModeRegisterDefinition = 0;
+
+  HAL_SDRAM_SendCommand(&hsdram1, &Command, 0xFFFF);
+
+  HAL_Delay(1);
+
+  // --------------------------------------------------------------------------
+  // precharge all command:
+  // --------------------------------------------------------------------------
+  Command.CommandMode = FMC_SDRAM_CMD_PALL;
+  Command.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK1;
+  Command.AutoRefreshNumber = 1;
+  Command.ModeRegisterDefinition = 0;
+  HAL_SDRAM_SendCommand(&hsdram1, &Command, 0xFFFF);
+
+  HAL_Delay(1);
+
+  // --------------------------------------------------------------------------
+  // auto Refresh command
+  // --------------------------------------------------------------------------
+  Command.CommandMode            = FMC_SDRAM_CMD_AUTOREFRESH_MODE;
+  Command.CommandTarget          = FMC_SDRAM_CMD_TARGET_BANK1;
+  Command.AutoRefreshNumber      = 8;
+  Command.ModeRegisterDefinition = 0;
+
+  HAL_SDRAM_SendCommand(&hsdram1, &Command, 0xFFFF);
+
+  HAL_Delay(1);
+
+
+  // --------------------------------------------------------------------------
+  // Program the external memory mode register
+  // --------------------------------------------------------------------------
+
+  const int SDRAM_MODEREG_BURST_LENGTH_1              = ((uint16_t)0x0000);
+  const int SDRAM_MODEREG_BURST_LENGTH_2             = ((uint16_t)0x0001);
+  const int SDRAM_MODEREG_BURST_LENGTH_4             = ((uint16_t)0x0002);
+  const int SDRAM_MODEREG_BURST_LENGTH_8             = ((uint16_t)0x0004);
+  const int SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL      = ((uint16_t)0x0000);
+  const int SDRAM_MODEREG_BURST_TYPE_INTERLEAVED     = ((uint16_t)0x0008);
+  const int SDRAM_MODEREG_CAS_LATENCY_2              = ((uint16_t)0x0020);
+  const int SDRAM_MODEREG_CAS_LATENCY_3              = ((uint16_t)0x0030);
+  const int SDRAM_MODEREG_OPERATING_MODE_STANDARD    = ((uint16_t)0x0000);
+  const int SDRAM_MODEREG_WRITEBURST_MODE_PROGRAMMED = ((uint16_t)0x0000);
+  const int SDRAM_MODEREG_WRITEBURST_MODE_SINGLE     = ((uint16_t)0x0200);
+
+  uint32_t tmpmrd = (uint32_t)SDRAM_MODEREG_BURST_LENGTH_1 |\
+                     SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL   |\
+                     SDRAM_MODEREG_CAS_LATENCY_3           |\
+                     SDRAM_MODEREG_OPERATING_MODE_STANDARD |\
+                     SDRAM_MODEREG_WRITEBURST_MODE_SINGLE;
+
+  Command.CommandMode            = FMC_SDRAM_CMD_LOAD_MODE;
+  Command.CommandTarget          = FMC_SDRAM_CMD_TARGET_BANK1;
+  Command.AutoRefreshNumber      = 1;
+  Command.ModeRegisterDefinition = tmpmrd;
+
+  HAL_SDRAM_SendCommand(&hsdram1, &Command, 0xFFFF);
+
+  HAL_Delay(1);
+
+  HAL_SDRAM_ProgramRefreshRate(&hsdram1, 0x0603);
 
   /* USER CODE END FMC_Init 2 */
 }
@@ -1242,14 +1555,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF10_OTG_HS;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : DSIHOST_TE_Pin */
-  GPIO_InitStruct.Pin = DSIHOST_TE_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF13_DSI;
-  HAL_GPIO_Init(DSIHOST_TE_GPIO_Port, &GPIO_InitStruct);
-
   /*Configure GPIO pins : ARDUINO_MISO_D12_Pin ARDUINO_MOSI_PWM_D11_Pin */
   GPIO_InitStruct.Pin = ARDUINO_MISO_D12_Pin|ARDUINO_MOSI_PWM_D11_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -1264,6 +1569,82 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+
+
+// ----------------------------------------------------------------------------
+// Implementation of the OTM8009A I/O functions for the DSI interface 
+// ----------------------------------------------------------------------------
+
+// Forward the OTM8009A driver's command tables to DSI virtual channel 0. 
+void DSI_IO_WriteCmd(uint32_t NbrParams, uint8_t *pParams)
+{
+  HAL_StatusTypeDef status;
+
+  if (NbrParams <= 1U) {
+    // This driver stores short writes as {command, parameter}, even for count 0. 
+    status = HAL_DSI_ShortWrite(
+        &hdsi, 
+        0U, 
+        DSI_DCS_SHORT_PKT_WRITE_P1,
+        pParams[0], 
+        pParams[1]
+    );
+  }
+  else {
+    // Long-write tables contain the parameter bytes followed by the command.
+    status = HAL_DSI_LongWrite(
+        &hdsi, 
+        0U, 
+        DSI_DCS_LONG_PKT_WRITE,
+        NbrParams, 
+        pParams[NbrParams], 
+        pParams
+    );
+  }
+
+  if (status != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+// Read a DCS register on virtual channel 0; return 0 on success, 1 on failure. 
+int32_t DSI_IO_ReadCmd(uint32_t Reg, uint8_t *pData, uint32_t Size)
+{
+  if ((pData == NULL) || (Size == 0U)) {
+    return 1;
+  }
+
+  // DCS reads use Reg directly and do not need a generic parameter table.
+  if (HAL_DSI_Read(&hdsi, 0U, pData, Size, DSI_DCS_SHORT_PKT_READ,
+                   Reg, NULL) != HAL_OK) {
+    return 1;
+  }
+
+  return 0;
+}
+
+// Delay in milliseconds, usable during startup and from a running RTOS task.
+void OTM8009A_IO_Delay(uint32_t Delay) {
+  if (Delay == 0U) {
+    return;
+  }
+
+  if (osKernelGetState() == osKernelRunning) {
+    const uint64_t ticks =
+        (((uint64_t)Delay * osKernelGetTickFreq() + 999U) / 1000U) + 1U;
+    if ((ticks >= osWaitForever) || (osDelay((uint32_t)ticks) != osOK)) {
+      Error_Handler();
+    }
+  }
+  else {
+    // Startup, or scheduler locked: use the independent TIM6 HAL time base.
+    HAL_Delay(Delay);
+  }
+}
+
+
 
 /* USER CODE END 4 */
 
@@ -1364,6 +1745,57 @@ void start_audio_filter(void *argument)
     }
   }
   /* USER CODE END start_audio_filter */
+}
+
+/* USER CODE BEGIN Header_start_display_control */
+/**
+* @brief Function implementing the display_control thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_display_control */
+void start_display_control(void *argument)
+{
+  /* USER CODE BEGIN start_display_control */
+
+  display_init();
+
+  /* Infinite loop */
+  for(;;)
+  {
+    display_cyclic_exec_funciton();
+    osDelay(1);
+  }
+  /* USER CODE END start_display_control */
+}
+
+ /* MPU Configuration */
+
+void MPU_Config(void)
+{
+  MPU_Region_InitTypeDef MPU_InitStruct = {0};
+
+  /* Disables the MPU */
+  HAL_MPU_Disable();
+
+  /** Initializes and configures the Region and the memory to be protected
+  */
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+  MPU_InitStruct.BaseAddress = 0xC0000000;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_2MB;
+  MPU_InitStruct.SubRegionDisable = 0x0;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+  /* Enables the MPU */
+  HAL_MPU_Enable(MPU_HFNMI_PRIVDEF);
+
 }
 
 /**

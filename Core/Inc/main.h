@@ -56,6 +56,9 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
+extern DSI_HandleTypeDef hdsi;
+HAL_StatusTypeDef Framebuffer_Config(void);
+
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
