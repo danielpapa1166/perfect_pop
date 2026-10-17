@@ -156,64 +156,6 @@ void start_display_control(void *argument);
 
 /* USER CODE BEGIN PFP */
 
-#define FB_ADDR  0xC0000000UL
-#define LCD_W    800U
-#define LCD_H    480U
-
-
-
-HAL_StatusTypeDef Framebuffer_Config(void)
-{
-    LTDC_LayerCfgTypeDef layer = {0};
-
-    layer.WindowX0 = 0;
-    layer.WindowX1 = LCD_W;
-    layer.WindowY0 = 0;
-    layer.WindowY1 = LCD_H;
-
-    layer.PixelFormat = LTDC_PIXEL_FORMAT_ARGB8888;
-    layer.FBStartAdress = FB_ADDR;
-
-    layer.Alpha = 255;
-    layer.Alpha0 = 0;
-
-    layer.BlendingFactor1 =
-        LTDC_BLENDING_FACTOR1_PAxCA;
-    layer.BlendingFactor2 =
-        LTDC_BLENDING_FACTOR2_PAxCA;
-
-    layer.ImageWidth = LCD_W;
-    layer.ImageHeight = LCD_H;
-
-    const HAL_StatusTypeDef res = HAL_LTDC_ConfigLayer(&hltdc, &layer, 0);
-    return res;
-}
-
-
-void Framebuffer_Fill(void)
-{
-    volatile uint32_t *fb =
-        (volatile uint32_t *)FB_ADDR;
-
-    for (uint32_t y = 0; y < LCD_H; y++)
-    {
-        for (uint32_t x = 0; x < LCD_W; x++)
-        {
-            uint32_t color;
-
-            if (x < LCD_W / 3)
-                color = 0xFFFF0000; // Red
-            else if (x < 2 * LCD_W / 3)
-                color = 0xFF00FF00; // Green
-            else
-                color = 0xFF0000FF; // Blue
-
-            fb[y * LCD_W + x] = color;
-        }
-    }
-}
-
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -323,7 +265,6 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
