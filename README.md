@@ -11,6 +11,6 @@ Once I was preparing some popcorn for a movie night with my wife. And while I wa
 // plot of a Bell curve 
 
 Suddenly an idea came into my mind: 
-´´´ What if this charactersitic is always the same? ´´´
+``` What if this charactersitic is always the same? ```
 
 You can change the microwave, the power, the brand of the popcorn, but the shape of this curve remains. 
