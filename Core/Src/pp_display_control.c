@@ -10,14 +10,20 @@
 #include "main.h"
 #include "otm8009a.h"
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 #include "stm32f7xx_hal.h"
+#include "lvgl.h"
 
 #define LCD_W    800U
 #define LCD_H    480U
+#define DISPLAY_REFRESH_TIMEOUT_MS 100U
 
 
 #define SDRAM_BASE_ADDR 0xC0000000UL
 static volatile uint32_t * const sdram_ptr = (volatile uint32_t *)SDRAM_BASE_ADDR;
+
+lv_obj_t *label = NULL;
 
 static LTDC_HandleTypeDef * m_ltdc_ptr;
 static DSI_HandleTypeDef * m_dsi_ptr;
@@ -34,7 +40,94 @@ static volatile struct {
   uint32_t ltdc_line_length;
   uint32_t ltdc_line_count;
   HAL_StatusTypeDef ltdc_config_status;
+  HAL_StatusTypeDef refresh_status;
+  uint32_t refresh_count;
 } s_panel_debug;
+
+
+/* NOLOAD: clear only after MX_FMC_Init(). Both LVGL and LTDC use this array.
+ * The existing non-cacheable 2 MiB MPU region covers the entire framebuffer. */
+static uint32_t draw_buf[LCD_W * LCD_H]
+    __attribute__((section(".sdram_framebuffer"), aligned(32)));
+
+static HAL_StatusTypeDef display_refresh(void)
+{
+    /* Poll completion; no DSI IRQ handler is required for this driver. */
+    __HAL_DSI_CLEAR_FLAG(m_dsi_ptr, DSI_FLAG_ER);
+    __DSB();
+
+    HAL_StatusTypeDef status = HAL_DSI_Refresh(m_dsi_ptr);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    const uint32_t started = HAL_GetTick();
+    while (__HAL_DSI_GET_FLAG(m_dsi_ptr, DSI_FLAG_ER) == 0U) {
+        if ((HAL_GetTick() - started) >= DISPLAY_REFRESH_TIMEOUT_MS) {
+            return HAL_TIMEOUT;
+        }
+        /* Yield the display task while LTDC/DSI reads the shared buffer. */
+        OTM8009A_IO_Delay(1U);
+    }
+
+    CLEAR_BIT(m_dsi_ptr->Instance->WCR, DSI_WCR_LTDCEN);
+    __HAL_DSI_CLEAR_FLAG(m_dsi_ptr, DSI_FLAG_ER);
+    s_panel_debug.refresh_count++;
+    return HAL_OK;
+}
+
+static void display_flush(
+		lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+
+    (void)area;
+    (void)px_map;
+
+    /* DIRECT mode has already drawn into the LTDC framebuffer. Present once
+     * all invalid areas are rendered, then release it only after transfer. */
+    if (lv_display_flush_is_last(disp)) {
+        s_panel_debug.refresh_status = display_refresh();
+        if (s_panel_debug.refresh_status != HAL_OK) {
+            Error_Handler();
+            return;
+        }
+    }
+
+    lv_display_flush_ready(disp);
+}
+
+void LVGL_Init(void)
+{
+    lv_init();
+    lv_tick_set_cb(HAL_GetTick);
+
+    lv_display_t *disp =
+        lv_display_create(LCD_W, LCD_H);
+    if (disp == NULL) {
+        Error_Handler();
+        return;
+    }
+
+    lv_display_set_color_format(
+        disp, LV_COLOR_FORMAT_ARGB8888);
+
+    lv_display_set_buffers(
+        disp,
+        draw_buf,
+        NULL,
+        sizeof(draw_buf),
+        LV_DISPLAY_RENDER_MODE_DIRECT);
+
+    lv_display_set_flush_cb(disp, display_flush);
+
+    label = lv_label_create(lv_screen_active());
+    if (label == NULL) {
+        Error_Handler();
+        return;
+    }
+
+    lv_label_set_text(label, "Szia Agi!");
+    lv_obj_center(label);
+}
 
 
 static void sdram_sanity_check(void) {
@@ -84,7 +177,7 @@ static HAL_StatusTypeDef Framebuffer_Config(void) {
   layer.WindowY1 = LCD_H;
 
   layer.PixelFormat = LTDC_PIXEL_FORMAT_ARGB8888;
-  layer.FBStartAdress = SDRAM_BASE_ADDR;
+  layer.FBStartAdress = (uint32_t)(uintptr_t)draw_buf;
 
   layer.Alpha = 255;
   layer.Alpha0 = 0;
@@ -167,7 +260,15 @@ void display_init(LTDC_HandleTypeDef * f_ltdc_ptr, DSI_HandleTypeDef * f_dsi_ptr
   m_ltdc_ptr = f_ltdc_ptr;
   m_dsi_ptr = f_dsi_ptr;
 
+  /* Own the refresh cycle: automatic refresh could read the single buffer
+     while LVGL modifies it. Completion is polled by display_refresh(). */
+  CLEAR_BIT(m_dsi_ptr->Instance->WCFGR, DSI_WCFGR_AR);
+  __HAL_DSI_DISABLE_IT(m_dsi_ptr, DSI_IT_TE | DSI_IT_ER);
+
   //sdram_sanity_check();
+
+  /* FMC/SDRAM initialization in main() precedes creation of this task. */
+  memset(draw_buf, 0, sizeof(draw_buf));
 
   /* Use the platform delay callback during startup or from an RTOS task. */
   HAL_GPIO_WritePin(DSI_RESET_GPIO_Port, DSI_RESET_Pin, GPIO_PIN_SET);
@@ -219,64 +320,15 @@ void display_init(LTDC_HandleTypeDef * f_ltdc_ptr, DSI_HandleTypeDef * f_dsi_ptr
     Error_Handler();
   }
 
-  /* The SDRAM test overwrites the framebuffer; replace it before scanout. */
-  //Framebuffer_Fill(0);
-  paint_all_black(sdram_ptr); 
-
-
-  const uint16_t text_x_offset = 360;
-  const uint16_t text_y_offset = 210;
-
-  const char display_text[] = "Szia Agi!";
-  const uint32_t text_color[] = { 
-    0xFFFFFF00, 
-    0xFFFF00FF,
-    0xFF00FFFF,
-    0xFFFF0000, 
-    0xFF0000FF,
-    0xFF00FF00,
-    0xFFFFFF00,
-    0xFFFF00FF,
-    0xFF00FFFF
-  };
-
-  const uint8_t scaling_factor = 5; 
-
-  for (uint8_t i = 0; i < sizeof(display_text) - 1; i++) {
-    put_char_scaled(sdram_ptr, 
-      text_x_offset + i * scaling_factor * 8, 
-      text_y_offset, 
-      display_text[i], 
-      text_color[i], 
-      scaling_factor);
-  }
-
-  put_dot(sdram_ptr, 
-    text_x_offset + 6 * scaling_factor * 8 - scaling_factor * 2, 
-    text_y_offset - scaling_factor * 1, 
-    scaling_factor * 1, 
-    0xFF00FF00);
-
-  put_dot(sdram_ptr, 
-    text_x_offset + 6 * scaling_factor * 8 - scaling_factor * 2, 
-    text_y_offset - scaling_factor * 2, 
-    scaling_factor * 1, 
-    0xFF00FF00);
-
-
   if (Framebuffer_Config() != HAL_OK)
   {
     Error_Handler();
   }
 
 
-  // Send the completed color bars once; TE synchronization is not configured yet. 
-  if (HAL_DSI_Refresh(m_dsi_ptr) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  
-  __asm("nop"); 
+  LVGL_Init();
+
+  lv_timer_handler();
 
 
   return;
@@ -293,8 +345,12 @@ void display_cyclic_exec_funciton(void) {
     Error_Handler();
   }
 
+  if(label == NULL) {
+    Error_Handler();
+  }
 
-  if (count_up_flag == 0) {
+
+  /*if (count_up_flag == 0) {
     dot_shift += step_size;
     if (dot_shift >= LCD_W - 20) {
       count_up_flag = 1;
@@ -307,7 +363,16 @@ void display_cyclic_exec_funciton(void) {
   }
 
   move_dot(sdram_ptr, dot_shift, 0, 0xFFFFFFFF);
-  HAL_DSI_Refresh(m_dsi_ptr);
+  HAL_DSI_Refresh(m_dsi_ptr);*/
+ 
+
+  static uint16_t test_cnt = 0; 
+  char buffer[64];
+  sprintf(buffer, "Szia Agi! %u", test_cnt++);
+
+  lv_label_set_text(label, buffer);
+
+  lv_timer_handler();
 
   return;
 } 
