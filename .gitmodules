@@ -1,3 +1,6 @@
 [submodule "submodules/stm32-wm8994"]
 	path = submodules/stm32-wm8994
 	url = git@github.com:STMicroelectronics/stm32-wm8994.git
+[submodule "Middlewares/lvgl"]
+	path = Middlewares/lvgl
+	url = https://github.com/lvgl/lvgl.git
