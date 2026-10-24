@@ -119,10 +119,13 @@ const osThreadAttr_t audio_filter_attributes = {
 osThreadId_t display_controlHandle;
 const osThreadAttr_t display_control_attributes = {
   .name = "display_control",
-  .stack_size = 512 * 4,
+  .stack_size = 2048 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal7,
 };
 /* USER CODE BEGIN PV */
+
+/* Minimum unused display-task stack since startup, in bytes (inspect in GDB). */
+volatile uint32_t g_display_stack_min_free_bytes;
 
 
 
@@ -1703,12 +1706,14 @@ void start_display_control(void *argument)
 {
   /* USER CODE BEGIN start_display_control */
   display_init(&hltdc, &hdsi);
+  g_display_stack_min_free_bytes = osThreadGetStackSpace(display_controlHandle);
 
   /* Infinite loop */
   for(;;)
   {
     osDelay(10);
     display_cyclic_exec_funciton();
+    g_display_stack_min_free_bytes = osThreadGetStackSpace(display_controlHandle);
   }
   /* USER CODE END start_display_control */
 }

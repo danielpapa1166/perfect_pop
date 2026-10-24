@@ -44,10 +44,12 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Memories definition */
 MEMORY
 {
-  /* DTCM-RAM: tightly-coupled to the CPU only, NOT reachable by DMA controllers */
+  /* DTCM-RAM: tightly-coupled data memory for CPU working data */
   RAM      (xrw)  : ORIGIN = 0x20000000,   LENGTH = 128K
   /* SRAM1+SRAM2 on the AXI/AHB bus matrix: reachable by DMA controllers */
   RAM_D2   (xrw)  : ORIGIN = 0x20020000,   LENGTH = 384K
+  /* External SDRAM: initialized by MX_FMC_Init(), after C startup */
+  SDRAM    (xrw)  : ORIGIN = 0xC0000000,   LENGTH = 16M
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 2048K
 }
 
@@ -178,13 +180,42 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  /* Buffers accessed by DMA must live outside DTCM; place them in RAM_D2 */
+  /* Keep the application's DMA buffers in SRAM1/SRAM2 */
   .dma_buffer (NOLOAD) :
   {
     . = ALIGN(4);
     *(.dma_buffer)
     . = ALIGN(4);
   } >RAM_D2
+
+  /* LVGL initializes its allocator metadata in lv_mem_init(); the pool does
+     not need a flash image or startup zeroing. Keep it separate from DMA. */
+  .lvgl_pool (NOLOAD) :
+  {
+    . = ALIGN(8);
+    __lvgl_pool_start__ = .;
+    *(.lvgl_pool)
+    *(.lvgl_pool.*)
+    . = ALIGN(8);
+    __lvgl_pool_end__ = .;
+  } >RAM_D2
+
+  /* Shared LVGL/LTDC framebuffer. C startup must not touch SDRAM before FMC
+     initialization; display_init() explicitly clears it before use. */
+  .sdram_framebuffer (NOLOAD) :
+  {
+    . = ALIGN(32);
+    __sdram_framebuffer_start__ = .;
+    *(.sdram_framebuffer)
+    *(.sdram_framebuffer.*)
+    . = ALIGN(32);
+    __sdram_framebuffer_end__ = .;
+  } >SDRAM
+
+  ASSERT(ADDR(.sdram_framebuffer) == ORIGIN(SDRAM),
+         "Framebuffer must start at the SDRAM base")
+  ASSERT(SIZEOF(.sdram_framebuffer) <= 2M,
+         "Framebuffer exceeds the non-cacheable 2 MiB SDRAM MPU region")
 
   /* Remove information from the compiler libraries */
   /DISCARD/ :
