@@ -45,6 +45,11 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 
+/* Failure reason: 1 = task stack overflow, 2 = FreeRTOS heap exhausted. */
+volatile uint32_t g_rtos_failure_reason;
+TaskHandle_t volatile g_rtos_failed_task;
+const char * volatile g_rtos_failed_task_name;
+
 /* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -54,6 +59,23 @@
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+
+void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
+{
+  taskDISABLE_INTERRUPTS();
+  g_rtos_failed_task = task;
+  g_rtos_failed_task_name = task_name;
+  g_rtos_failure_reason = 1U;
+  /* The task name pointer may refer to corrupted memory; do not dereference it. */
+  for (;;) { __NOP(); }
+}
+
+void vApplicationMallocFailedHook(void)
+{
+  taskDISABLE_INTERRUPTS();
+  g_rtos_failure_reason = 2U;
+  for (;;) { __NOP(); }
+}
 
 /* USER CODE END Application */
 
