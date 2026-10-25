@@ -100,10 +100,9 @@ objects. These sizes are also saved in `perfect_pop.ioc`.
 
 Inspect `g_display_stack_min_free_bytes` in GDB after rendering to see the
 display task's minimum unused stack in bytes. Stack-overflow checking (method
-2) and the allocation-failure hook are enabled. They halt in
-`vApplicationStackOverflowHook()` or `vApplicationMallocFailedHook()`;
-`g_rtos_failure_reason` identifies stack overflow (1) or FreeRTOS heap
-exhaustion (2), and `g_rtos_failed_task` identifies the overflowing task.
+2) and the allocation-failure hook are enabled. The hook functions currently
+contain only CubeMX-generated placeholders, so they do not record or halt on
+failures.
 Overflow checks run at context switches and cannot catch every overwrite
 before corruption occurs. `HAL_GetTick` remains the LVGL tick callback: TIM6
 maintains its millisecond counter independently of the FreeRTOS SysTick.
@@ -143,3 +142,12 @@ makefiles as the fix; CubeIDE will regenerate them.
 CubeIDE's `.cproject` file is ignored by this repository, so these IDE settings
 must be recreated when importing a fresh checkout. The current LVGL submodule
 identifies itself as `10.0.0-dev`; use its bundled template and matching APIs.
+
+The FT6X06 touchscreen driver lives in `Middlewares/stm32-ft6x06`. Keep the
+application configuration at `Middlewares/ft6x06_conf.h` so the submodule stays
+unchanged. Add `../Middlewares` and `../Middlewares/stm32-ft6x06` to the C compiler
+include paths in Debug and Release, including the Debug `Core` folder override.
+The first path exposes the configuration header; the second exposes `ft6x06.h`.
+The `Middlewares` source entry includes both `ft6x06.c` and `ft6x06_reg.c` in the
+build. `FT6X06_TS_Drv_t` is the driver-table type; `FT6X06_TS_Driver` is the
+driver table exported by ST.

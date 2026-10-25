@@ -9,9 +9,10 @@
 #define SRC_PP_DISPLAY_CONTROL_H_
 
 #include "stm32f7xx_hal.h"
+#include "stdint.h"
 
 void display_init(LTDC_HandleTypeDef * f_ltdc_ptr, DSI_HandleTypeDef * f_dsi_ptr);
-void display_cyclic_exec_funciton(void);
+void display_cyclic_exec_funciton(uint8_t data);
 
 
 #endif /* SRC_PP_DISPLAY_CONTROL_H_ */

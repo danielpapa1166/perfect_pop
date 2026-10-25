@@ -34,6 +34,7 @@
 #include <sys/types.h>
 
 #include "otm8009a.h"
+#include "ft6x06.h"
 
 /* USER CODE END Includes */
 
@@ -128,6 +129,8 @@ const osThreadAttr_t display_control_attributes = {
 volatile uint32_t g_display_stack_min_free_bytes;
 
 
+static FT6X06_TS_Drv_t ft6x06_ts_driver;
+static FT6X06_Object_t ft6x06_object;
 
 /* USER CODE END PV */
 
@@ -158,6 +161,63 @@ void start_audio_filter(void *argument);
 void start_display_control(void *argument);
 
 /* USER CODE BEGIN PFP */
+
+#define TS_I2C_ADDRESS                   ((uint16_t)0x54)
+#define TS_I2C_ADDRESS_A02               ((uint16_t)0x70)
+
+
+static int32_t ft6x06_ts_init(void) {
+
+  const int res = HAL_I2C_IsDeviceReady(&hi2c4, TS_I2C_ADDRESS, 3, HAL_MAX_DELAY);
+  if (res != HAL_OK) {
+    return FT6X06_ERROR;
+  }
+
+  return FT6X06_OK;
+}
+
+static int32_t ft6x06_ts_deinit(void) {
+  return FT6X06_OK;
+}
+
+
+static int32_t ft6x06_ts_read_id(void) {
+  return FT6X06_OK;
+}
+
+static int32_t ft6x06_ts_read_register(uint16_t dev_addr, uint16_t reg, 
+    uint8_t * data, uint16_t length) {
+
+
+  const int res = HAL_I2C_Mem_Read(&hi2c4, dev_addr, reg, 
+    I2C_MEMADD_SIZE_8BIT, (uint8_t *)data, length, HAL_MAX_DELAY);
+  
+  if (res != HAL_OK) {
+    return FT6X06_ERROR;
+  }
+
+  return FT6X06_OK;
+}
+
+static int32_t ft6x06_ts_write_register(uint16_t dev_addr, uint16_t reg, 
+    uint8_t * data, uint16_t length) {
+  
+  const int res = HAL_I2C_Mem_Write(&hi2c4, dev_addr, reg, 
+    I2C_MEMADD_SIZE_8BIT, (uint8_t *)data, length, HAL_MAX_DELAY);
+  
+  if (res != HAL_OK) {
+    return FT6X06_ERROR;
+  } 
+
+  return FT6X06_OK;
+}
+
+static int32_t ft6x06_ts_get_tick(void) {
+  return HAL_GetTick(); 
+}
+  
+
+
 
 /* USER CODE END PFP */
 
@@ -229,6 +289,25 @@ int main(void)
   		GPIO_PIN_SET);
 
   HAL_Delay(10);
+
+
+  FT6X06_IO_t ft6x06_io = {
+    .Init = ft6x06_ts_init,
+    .DeInit = ft6x06_ts_deinit,
+    .Address = TS_I2C_ADDRESS,
+    .WriteReg = ft6x06_ts_write_register,
+    .ReadReg = ft6x06_ts_read_register,
+    .GetTick = ft6x06_ts_get_tick
+  };
+
+  FT6X06_RegisterBusIO(&ft6x06_object, &ft6x06_io);
+
+  FT6X06_Init(&ft6x06_object);
+
+  FT6X06_State_t ts_state;
+  FT6X06_GetState(&ft6x06_object, &ts_state);
+
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -357,7 +436,6 @@ void PeriphCommonClock_Config(void)
   */
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LTDC|RCC_PERIPHCLK_SAI1;
   PeriphClkInitStruct.PLLSAI.PLLSAIN = 96;
-  /* LTDC: 192 MHz / 3 / 2 = 32 MHz, within two-lane RGB888 bandwidth. */
   PeriphClkInitStruct.PLLSAI.PLLSAIR = 3;
   PeriphClkInitStruct.PLLSAI.PLLSAIQ = 3;
   PeriphClkInitStruct.PLLSAI.PLLSAIP = RCC_PLLSAIP_DIV4;
@@ -1709,10 +1787,15 @@ void start_display_control(void *argument)
   g_display_stack_min_free_bytes = osThreadGetStackSpace(display_controlHandle);
 
   /* Infinite loop */
+  static FT6X06_State_t ts_state;
+  uint8_t data = 0U;
   for(;;)
   {
-    osDelay(10);
-    display_cyclic_exec_funciton();
+
+    FT6X06_GetState(&ft6x06_object, &ts_state);
+    data = (uint8_t)ts_state.TouchDetected;
+    osDelay(100);
+    display_cyclic_exec_funciton(data);
     g_display_stack_min_free_bytes = osThreadGetStackSpace(display_controlHandle);
   }
   /* USER CODE END start_display_control */

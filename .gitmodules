@@ -4,3 +4,6 @@
 [submodule "Middlewares/lvgl"]
 	path = Middlewares/lvgl
 	url = https://github.com/lvgl/lvgl.git
+[submodule "Middlewares/stm32-ft6x06"]
+	path = Middlewares/stm32-ft6x06
+	url = https://github.com/STMicroelectronics/stm32-ft6x06.git
