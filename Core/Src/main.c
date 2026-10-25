@@ -34,6 +34,7 @@
 #include <sys/types.h>
 
 #include "otm8009a.h"
+#include "ft6x06.h"
 
 /* USER CODE END Includes */
 
@@ -127,6 +128,8 @@ const osThreadAttr_t display_control_attributes = {
 /* Minimum unused display-task stack since startup, in bytes (inspect in GDB). */
 volatile uint32_t g_display_stack_min_free_bytes;
 
+
+static FT6X06_TS_Drv_t ft6x06_ts_driver;
 
 
 /* USER CODE END PV */

@@ -143,3 +143,12 @@ makefiles as the fix; CubeIDE will regenerate them.
 CubeIDE's `.cproject` file is ignored by this repository, so these IDE settings
 must be recreated when importing a fresh checkout. The current LVGL submodule
 identifies itself as `10.0.0-dev`; use its bundled template and matching APIs.
+
+The FT6X06 touchscreen driver lives in `Middlewares/stm32-ft6x06`. Keep the
+application configuration at `Middlewares/ft6x06_conf.h` so the submodule stays
+unchanged. Add `../Middlewares` and `../Middlewares/stm32-ft6x06` to the C compiler
+include paths in Debug and Release, including the Debug `Core` folder override.
+The first path exposes the configuration header; the second exposes `ft6x06.h`.
+The `Middlewares` source entry includes both `ft6x06.c` and `ft6x06_reg.c` in the
+build. `FT6X06_TS_Drv_t` is the driver-table type; `FT6X06_TS_Driver` is the
+driver table exported by ST.
