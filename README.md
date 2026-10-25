@@ -100,10 +100,9 @@ objects. These sizes are also saved in `perfect_pop.ioc`.
 
 Inspect `g_display_stack_min_free_bytes` in GDB after rendering to see the
 display task's minimum unused stack in bytes. Stack-overflow checking (method
-2) and the allocation-failure hook are enabled. They halt in
-`vApplicationStackOverflowHook()` or `vApplicationMallocFailedHook()`;
-`g_rtos_failure_reason` identifies stack overflow (1) or FreeRTOS heap
-exhaustion (2), and `g_rtos_failed_task` identifies the overflowing task.
+2) and the allocation-failure hook are enabled. The hook functions currently
+contain only CubeMX-generated placeholders, so they do not record or halt on
+failures.
 Overflow checks run at context switches and cannot catch every overwrite
 before corruption occurs. `HAL_GetTick` remains the LVGL tick callback: TIM6
 maintains its millisecond counter independently of the FreeRTOS SysTick.

@@ -45,11 +45,6 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 
-/* Failure reason: 1 = task stack overflow, 2 = FreeRTOS heap exhausted. */
-volatile uint32_t g_rtos_failure_reason;
-TaskHandle_t volatile g_rtos_failed_task;
-const char * volatile g_rtos_failed_task_name;
-
 /* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,25 +52,37 @@ const char * volatile g_rtos_failed_task_name;
 
 /* USER CODE END FunctionPrototypes */
 
-/* Private application code --------------------------------------------------*/
-/* USER CODE BEGIN Application */
+/* Hook prototypes */
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
+void vApplicationMallocFailedHook(void);
 
-void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
+/* USER CODE BEGIN 4 */
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName)
 {
-  taskDISABLE_INTERRUPTS();
-  g_rtos_failed_task = task;
-  g_rtos_failed_task_name = task_name;
-  g_rtos_failure_reason = 1U;
-  /* The task name pointer may refer to corrupted memory; do not dereference it. */
-  for (;;) { __NOP(); }
+   /* Run time stack overflow checking is performed if
+   configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2. This hook function is
+   called if a stack overflow is detected. */
 }
+/* USER CODE END 4 */
 
+/* USER CODE BEGIN 5 */
 void vApplicationMallocFailedHook(void)
 {
-  taskDISABLE_INTERRUPTS();
-  g_rtos_failure_reason = 2U;
-  for (;;) { __NOP(); }
+   /* vApplicationMallocFailedHook() will only be called if
+   configUSE_MALLOC_FAILED_HOOK is set to 1 in FreeRTOSConfig.h. It is a hook
+   function that will get called if a call to pvPortMalloc() fails.
+   pvPortMalloc() is called internally by the kernel whenever a task, queue,
+   timer or semaphore is created. It is also called by various parts of the
+   demo application. If heap_1.c or heap_2.c are used, then the size of the
+   heap available to pvPortMalloc() is defined by configTOTAL_HEAP_SIZE in
+   FreeRTOSConfig.h, and the xPortGetFreeHeapSize() API function can be used
+   to query the size of free heap space that remains (although it does not
+   provide information on how the remaining heap might be fragmented). */
 }
+/* USER CODE END 5 */
+
+/* Private application code --------------------------------------------------*/
+/* USER CODE BEGIN Application */
 
 /* USER CODE END Application */
 

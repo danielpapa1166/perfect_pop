@@ -335,7 +335,7 @@ void display_init(LTDC_HandleTypeDef * f_ltdc_ptr, DSI_HandleTypeDef * f_dsi_ptr
 }
 
 
-void display_cyclic_exec_funciton(void) {
+void display_cyclic_exec_funciton(uint8_t data) {
 
   static uint16_t dot_shift = 0U;
   static uint8_t count_up_flag = 0; 
@@ -368,7 +368,7 @@ void display_cyclic_exec_funciton(void) {
 
   static uint16_t test_cnt = 0; 
   char buffer[64];
-  sprintf(buffer, "Szia Agi! %u", test_cnt++);
+  sprintf(buffer, "Szia Agi! %u %u", test_cnt++, data);
 
   lv_label_set_text(label, buffer);
 
