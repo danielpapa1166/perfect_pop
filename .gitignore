@@ -1,9 +1,6 @@
 .settings 
 Debug
 Drivers
-.cproject
-.mxproject
-.project
 perfect_pop Debug.launch
 **/__pycache__/
 tools/filter_sim/build
