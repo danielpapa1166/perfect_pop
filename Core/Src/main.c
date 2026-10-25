@@ -1787,12 +1787,12 @@ void start_display_control(void *argument)
   g_display_stack_min_free_bytes = osThreadGetStackSpace(display_controlHandle);
 
   /* Infinite loop */
-  static FT6X06_State_t ts_state;
+  static FT6X06_MultiTouch_State_t ts_state;
   uint8_t data = 0U;
   for(;;)
   {
 
-    FT6X06_GetState(&ft6x06_object, &ts_state);
+    FT6X06_GetMultiTouchState(&ft6x06_object, &ts_state);
     data = (uint8_t)ts_state.TouchDetected;
     osDelay(100);
     display_cyclic_exec_funciton(data);
